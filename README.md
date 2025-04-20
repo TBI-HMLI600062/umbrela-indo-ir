@@ -10,6 +10,17 @@ The UMBRELA framework provides a zero-shot, structured prompting approach for ge
 - The effect of model scale on leaderboard rank correlation and per-label agreement.
 - The reproducibility of UMBRELA's effectiveness across various LLM families.
 
+
+## 🤖 Models Evaluated
+
+We evaluated UMBRELA on:
+
+- Flan-T5-Large
+- Meta-Llama-3-8B-Instruct
+- Meta-Llama-3.3-70B-Instruct-Turbo
+- DeepSeek-V3
+
+
 ## 📂 Repository Structure
 ```
 ├── prompts/ # Prompt templates for different settings 
@@ -30,7 +41,8 @@ The UMBRELA framework provides a zero-shot, structured prompting approach for ge
 └── README.md # Project documentation
 ```
 
-Command Example
+<details>
+  <summary>📜 Full Evaluation Command Reference (Click to expand)</summary>
 
 ```
 python src/main.py \
@@ -56,3 +68,16 @@ python src/main.py \
 
 
 ```
+</details>
+
+## 🔧 Main Arguments
+
+| Argument             | What it means                                      |
+|----------------------|----------------------------------------------------|
+| `--model_id`         | Model name from HuggingFace (e.g., `deepseek-ai/DeepSeek-V3`) |
+| `--prompt_mode`      | Prompt strategy to use (`zeroshot_bing`, etc.)    |
+| `--test_qrel_path`   | Path to qrel (ground-truth relevance) file        |
+| `--queries_path`     | Path to the file with search queries               |
+| `--docs_path`        | Path to the document file                          |
+| `--result_file_path` | Where to save the model’s output                   |
+| `-together`          | Use Together.ai API to run the model (optional)   |
