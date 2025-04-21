@@ -23,6 +23,10 @@ We evaluated UMBRELA on:
 
 ## 📂 Repository Structure
 ```
+├── data/ 
+│ ├── dl2019 
+│ ├── qdl2020
+│ ├── dl2023 
 ├── prompts/ # Prompt templates for different settings 
 │ ├── qrel_fewshot_basic.txt 
 │ ├── qrel_fewshot_bing.txt 
@@ -41,8 +45,35 @@ We evaluated UMBRELA on:
 └── README.md # Project documentation
 ```
 
+
+## Data Directory
+
+The `data/` directory contains the datasets used for evaluation. It includes the following folders:
+
+- `dl2019/`: Contains data for the DL2019 dataset.
+- `dl2020/`: Contains data for the DL2020 dataset.
+- `dl2023/`: Contains data for the DL2023 dataset (LLLMJudge challenge dataset).
+
+Each of these directories contains files that are required for running the experiments (queries, documents, and qrels).
+
+
+## Main Arguments of Commands
+
+| Argument             | What it means                                      |
+|----------------------|----------------------------------------------------|
+| `--model_id`         | Model name from HuggingFace (e.g., `deepseek-ai/DeepSeek-V3`) |
+| `--prompt_mode`      | Prompt strategy to use (`zeroshot_bing`, etc.)    |
+| `--test_qrel_path`   | Path to qrel (ground-truth relevance) file        |
+| `--queries_path`     | Path to the file with search queries               |
+| `--docs_path`        | Path to the document file                          |
+| `--result_file_path` | Where to save the model’s output                   |
+| `-together`          | Use Together.ai API to run the model (optional)   |
+
+
+
 <details>
-  <summary>📜 Full Evaluation Command Reference (Click to expand)</summary>
+  <summary>📜 Full Evaluation Command Example (Click to expand)</summary>
+
 
 ```
 python src/main.py \
@@ -55,7 +86,7 @@ python src/main.py \
   -together (Only if you want to run a model with Together AI API )
 ```
 
-Example of usage
+Example of Usage (DeepSeek-V3 on TREC DL2020)
 ```
 python src/main.py \
   --model_id "deepseek-ai/DeepSeek-V3" \
@@ -69,15 +100,3 @@ python src/main.py \
 
 ```
 </details>
-
-## 🔧 Main Arguments
-
-| Argument             | What it means                                      |
-|----------------------|----------------------------------------------------|
-| `--model_id`         | Model name from HuggingFace (e.g., `deepseek-ai/DeepSeek-V3`) |
-| `--prompt_mode`      | Prompt strategy to use (`zeroshot_bing`, etc.)    |
-| `--test_qrel_path`   | Path to qrel (ground-truth relevance) file        |
-| `--queries_path`     | Path to the file with search queries               |
-| `--docs_path`        | Path to the document file                          |
-| `--result_file_path` | Where to save the model’s output                   |
-| `-together`          | Use Together.ai API to run the model (optional)   |
