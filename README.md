@@ -61,7 +61,7 @@ Each of these directories contains files that are required for running the exper
 
 | Argument             | What it means                                      |
 |----------------------|----------------------------------------------------|
-| `--model_id`         | Model name from HuggingFace (e.g., `deepseek-ai/DeepSeek-V3`) |
+| `--model_id`         | Model name (e.g., `deepseek-ai/DeepSeek-V3`) |
 | `--prompt_mode`      | Prompt strategy to use (`zeroshot_bing`, etc.)    |
 | `--test_qrel_path`   | Path to qrel (ground-truth relevance) file        |
 | `--queries_path`     | Path to the file with search queries               |
