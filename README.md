@@ -4,14 +4,14 @@
 
 This repository contains code and resources for reproducing the experiments in **"Does UMBRELA Work on Other LLMs?"**. Our study investigates the generalizability of the UMBRELA LLM Judge evaluation framework across different large language models (LLMs), assessing its effectiveness beyond the original study.
 
-## 📌 Overview
+## Overview
 The UMBRELA framework provides a zero-shot, structured prompting approach for generating graded relevance labels. This work explores:
 - How different LLMs impact relevance assessment accuracy.
 - The effect of model scale on leaderboard rank correlation and per-label agreement.
 - The reproducibility of UMBRELA's effectiveness across various LLM families.
 
 
-## 🤖 Models Evaluated
+## Models Evaluated
 
 We evaluated UMBRELA on:
 
@@ -21,7 +21,7 @@ We evaluated UMBRELA on:
 - DeepSeek-V3
 
 
-## 📂 Repository Structure
+## Repository Structure
 ```
 ├── data/ 
 │ ├── dl2019 
@@ -72,7 +72,7 @@ Each of these directories contains files that are required for running the exper
 
 
 <details>
-  <summary>📜 Full Evaluation Command Example (Click to expand)</summary>
+  <summary>Full Evaluation Command Example (Click to expand)</summary>
 
 
 ```
