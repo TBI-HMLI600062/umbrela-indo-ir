@@ -44,6 +44,8 @@ def parse_arguments():
                       help="Output path for results")
     parser.add_argument("--prompt_mode", type=str, default="zeroshot_basic",
                       help="Valid values: 'zeroshot_bing', 'zeroshot_basic', 'fewshot_bing', 'fewshot_basic'")
+    parser.add_argument("--is_dl23", action="store_true", 
+                        help="Set if using DL23 (adds mapping conversion)")
     parser.add_argument("-together", action="store_true",
                       help="Use together.ai API")
     parser.add_argument("--max_pairs", type=int, default=None,
@@ -56,7 +58,7 @@ def parse_arguments():
 def main():
     logger, device = setup_logging_and_device()
     args = parse_arguments()
-    if "2019" not in args.docs_path and "2020" not in args.docs_path:
+    if ("2019" not in args.docs_path and "2020" not in args.docs_path) or args.is_dl23:
         is_dl23 = True
     else:
         is_dl23 = False

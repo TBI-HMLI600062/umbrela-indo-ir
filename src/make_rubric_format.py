@@ -80,7 +80,28 @@ def process_log_to_rubric(input_file: str, output_file: str, qrel_file_path: str
                          is_dl23: bool = False, doc_mapping_path: Optional[str] = "./data/dl2023/docid_to_docidx.txt",
                          query_mapping_path: Optional[str] = "./data/dl2023/qid_to_qidx.txt",
                          model_name: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo"):
-    """Process UMBRELA log file to rubric format."""
+    '''
+    Converts a JSONL log file of LLM relevance judgments to UMBRELA rubric format.
+
+    This function processes a JSONL log file containing relevance judgments from a language model,
+    optionally maps query and document IDs to MS MARCO IDs for the TREC DL23 dataset, and generates
+    a gzip-compressed JSONL file in the UMBRELA rubric format. The output is compatible with the
+    Autograder Workbench (https://github.com/laura-dietz/rubric-internal) for trec style evaluation, 
+    such as computing metrics like nDCG or MAP, and leaderboard corelation.
+
+    See Also:
+        - Autograder Workbench: https://github.com/laura-dietz/rubric-internal
+        - TREC Deep Learning Track: https://trec.nist.gov/tracks.html
+
+        
+    input_file: Path to JSONL log file with keys: qidx, docidx, passage, query, LLMs_output,final_relevance_score, prompt_mode.
+    output_file: Path to output gzip-compressed JSONL file.
+    qrel_file_path: Path to qrel file (format: qid 0 docid score).
+    is_dl23: If True, maps IDs to MS MARCO IDs for TREC DL23. Defaults to False.
+    doc_mapping_path: Path to document ID mapping file for TREC DL23. Defaults to "./data/dl2023/docid_to_docidx.txt".
+    query_mapping_path: Path to query ID mapping file for TREC DL23. Defaults to "./data/dl2023/qid_to_qidx.txt".
+    model_name: Name of the LLM used. Defaults to "meta-llama/Llama-3.3-70B-Instruct-Turbo".    
+    '''
     # Load ground truth qrels
     qrel_dict = make_qrel_dict(qrel_file_path)
     
@@ -102,15 +123,12 @@ def process_log_to_rubric(input_file: str, output_file: str, qrel_file_path: str
                     log = json.loads(line.strip())
                     qid = log["qidx"]
                     docid = log["docidx"]
-                    # print(passage_to_msmarco)
-                    # print(qidtomsmarcoqids)
-                    # print(qid,docid)
+
                     
                     if is_dl23:
                         pair_key = (qidtomsmarcoqids[qid],passage_to_msmarco[docid])
                     else:
                         pair_key = (qid, docid)
-                    # print(pair_key)
                     # Try to get ground truth score
                     try:
                         ground_truth = qrel_dict[(qid, docid)]
@@ -152,13 +170,3 @@ def process_log_to_rubric(input_file: str, output_file: str, qrel_file_path: str
     print(f"Processing complete:\n"
           f"Processed entries: {processed_count}\n"
           f"Errors encountered: {error_count}")
-
-
-# Usage example:
-    # process_log_to_rubric(
-    #     input_file="path/to/your/log.json",
-    #     output_file="path/to/output/umbrella_rubric.jsonl.gz",
-    #     qrel_file_path="path/to/qrels.txt",
-    #     is_dl23=False,  # Set to True for DL23 dataset
-    #     model_name="meta-llama/Llama-3.3-70B-Instruct-Turbo"
-    # )
