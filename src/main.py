@@ -77,12 +77,12 @@ def main():
     log_file ="."/ Path(args.result_file_path).parent / "logs" / Path(args.result_file_path).name.replace(".txt", ".jsonl")
     rubric_file = "."/ Path(args.result_file_path).parent / "rubric_format" / Path(args.result_file_path).name.replace(".txt", "_rubric.jsonl.gz")
     print(f"is_dl23:{is_dl23}")
-    # Convert to rubric format using the same result_path
+    # # Convert relevance judgment logs to UMBRELLA rubric format for TREC-style evaluation
     process_log_to_rubric(
         input_file=log_file,
         output_file=rubric_file,
         qrel_file_path=args.test_qrel_path,
-        is_dl23=is_dl23,  # Set to True for DL23 dataset
+        is_dl23=is_dl23,  
         model_name=args.model_id
     )
 
