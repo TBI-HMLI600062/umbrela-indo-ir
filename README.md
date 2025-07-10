@@ -1,9 +1,14 @@
-# Appendix for Umbrella Reproduction
+# Appendix for "Does UMBRELA Work on Other LLMs?"
 
 Contact: Naghmeh.Farzi@unh.edu
 
 Paper Link: [paper.pdf](paper.pdf)
 
+Citation: Naghmeh Farzi and Laura Dietz. 2025. *Does UMBRELA Work on Other
+LLMs?.* In Proceedings of the 48th International ACM SIGIR Conference on
+Research and Development in Information Retrieval (SIGIR ’25), July 13–18,
+2025, Padua, Italy. ACM, New York, NY, USA, 9 pages. https://doi.org/10.
+1145/3726302.3730317
 
 This repository contains code and resources for reproducing the experiments in **"Does UMBRELA Work on Other LLMs?"**. Our study investigates the generalizability of the UMBRELA LLM Judge evaluation framework across different large language models (LLMs), assessing its effectiveness beyond the original study.
 
