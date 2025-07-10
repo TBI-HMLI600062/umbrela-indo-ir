@@ -1,5 +1,7 @@
 # Appendix for Umbrella Reproduction
 
+Contact: Naghmeh.Farzi@unh.edu
+Paper Link: <paper.pdf>
 
 
 This repository contains code and resources for reproducing the experiments in **"Does UMBRELA Work on Other LLMs?"**. Our study investigates the generalizability of the UMBRELA LLM Judge evaluation framework across different large language models (LLMs), assessing its effectiveness beyond the original study.
