@@ -122,7 +122,6 @@ Each task expects JSON files with the following structure:
 {
     "item_id": "mbpp_1",
     "question": "Write a function to...",
-    
     "test_list": ["assert function_name(...) == ..."],
     "code": "def function_name ...",
     "function_name": "function_name",
