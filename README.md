@@ -1,3 +1,109 @@
+# UMBRELA for Indonesian IR — LLM-as-Judge + Reranker Training + Bias Analysis
+
+**Tugas Kelompok IR Genap 2025/2026** | Faiz · Vincent · Radit · Arvin · Karol
+
+Extension of the UMBRELA framework (SIGIR 2025) to Indonesian Information Retrieval using MIRACL-ID.
+We compare multilingual vs. Indonesian-specific LLM judges, train rerankers from LLM-generated qrels,
+and analyze self-reinforcing bias (RQ3).
+
+---
+
+## Quick Start (per person)
+
+### Step 0 — Clone & install
+```bash
+git clone https://github.com/TBI-HMLI600062/umbrela-indo-ir
+cd umbrela-indo-ir
+pip install -r requirements.txt
+```
+
+### Step 1 — Download processed MIRACL-ID data (one command, ~2.5 GB)
+```bash
+huggingface-cli download fassabilf/umbrela-indo-ir \
+    --repo-type dataset --local-dir data/miracl-id/
+```
+Data splits: **train** (~3257 queries), **val** (~814 queries), **test** (960 queries, has human qrels).
+Split seed: `42`. Test = MIRACL dev with human relevance judgments.
+
+### Step 2 — Run your LLM judge (replace MODEL_ID)
+```bash
+# Faiz: Qwen
+python qrel_generation/inference.py \
+    --judge-model Qwen/Qwen2.5-7B-Instruct \
+    --split train --n-queries 1000 \
+    --output results/qrels/qwen_train.txt
+
+# Vincent: SahabatAI-Llama3
+python qrel_generation/inference.py \
+    --judge-model GoToCompany/llama3-8b-cpt-sahabatai-v1-instruct \
+    --split train --n-queries 1000 \
+    --output results/qrels/sahabat_llama_train.txt --batch-size 8
+
+# Radit: SahabatAI-Gemma2
+python qrel_generation/inference.py \
+    --judge-model GoToCompany/gemma2-9b-cpt-sahabatai-v1-instruct \
+    --split train --n-queries 1000 \
+    --output results/qrels/sahabat_gemma_train.txt --batch-size 8
+```
+Inference supports **resume** (safe to Ctrl+C and restart) and **CUDA OOM recovery**.
+
+### Step 3 — Evaluation
+```bash
+# Cohen's kappa (RQ1)
+python evaluation/metrics.py \
+    --llm-qrels results/qrels/qwen_train.txt \
+    --human-qrels data/miracl-id/qrels/human/test.txt \
+    --output results/final/kappa.csv
+
+# nDCG@10 (RQ2)
+python evaluation/eval_pipeline.py \
+    --first-stage bm25 \
+    --reranker results/reranker/qwen/ \
+    --output results/final/bm25_qwen_rk.json
+```
+
+---
+
+## Repository Structure
+
+```
+umbrela-indo-ir/
+├── requirements.txt
+├── data/
+│   ├── download_miracl.py      # Download + preprocess MIRACL-ID → upload to HF
+│   ├── dl2019/, dl2020/, dl2023/   # Original TREC DL data (from paper)
+├── qrel_generation/
+│   └── inference.py            # UMBRELA judge on MIRACL-ID (E0-T2, Faiz)
+├── retrieval/
+│   ├── bm25/index.py, retrieve.py         # Arvin (E4)
+│   └── dense/embed_corpus.py, retrieve.py, hybrid.py  # Arvin + Karol
+├── reranker/
+│   ├── prepare_data.py, train.py, inference.py  # Faiz (E1)
+├── evaluation/
+│   ├── metrics.py              # Cohen's kappa
+│   ├── eval_pipeline.py        # nDCG@10 evaluation
+│   └── bias_analysis.py        # RQ3 bias chart (Karol)
+├── src/                        # Original UMBRELA source (TREC DL)
+├── prompts/                    # UMBRELA prompt templates
+├── results/final/              # Tracked: final tables + charts
+└── paper/                      # ACL format LaTeX
+```
+
+---
+
+## Research Questions
+
+| RQ | Question | Owner |
+|----|----------|-------|
+| RQ1 | Which LLM judge gives best relevance judgments for Indonesian? (Qwen vs SahabatAI-Llama vs SahabatAI-Gemma) | Faiz + Vincent + Radit |
+| RQ2 | Can LLM-generated qrels train a reranker that beats baseline? How many qrels? Effect of first-stage? | Faiz (main) + Vincent + Radit + Arvin |
+| RQ3 | Does LLM judge choice introduce self-reinforcing bias? | Karol |
+
+Dataset: **MIRACL-ID** — Indonesian Wikipedia, ~1.44M passages.
+Train/val split: 80/20 of MIRACL train, seed=42. Test = MIRACL dev.
+
+---
+
 # Appendix for "Does UMBRELA Work on Other LLMs?"
 
 Contact: Naghmeh.Farzi@unh.edu

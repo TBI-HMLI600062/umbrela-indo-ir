@@ -1,4 +1,17 @@
-# Byte-compiled / optimized / DLL files
+# --- MIRACL-ID data & model artifacts (large files, not tracked) ---
+data/miracl-id/
+embeddings/
+candidates/
+results/qrels/
+results/reranker/
+results/reranker_data/
+log_*.txt
+nohup.out
+*.bin
+*.pt
+*.safetensors
+
+# --- Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
