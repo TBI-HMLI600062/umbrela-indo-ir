@@ -49,7 +49,7 @@ class TogetherPipeline:
 
 
 
-def get_model_baseline(name_or_path_to_model: str, use_together: bool = False):
+def get_model_baseline(name_or_path_to_model: str, use_together: bool = False, use_4bit: bool = False):
     """
     Load and configure a language model for text generation.
     
@@ -95,19 +95,35 @@ def get_model_baseline(name_or_path_to_model: str, use_together: bool = False):
     
     # Standard causal language model
     else:
-        # Initialize tokenizer and model
         tokenizer = AutoTokenizer.from_pretrained(name_or_path_to_model)
-        model = AutoModelForCausalLM.from_pretrained(
-            name_or_path_to_model,
-            torch_dtype=torch.bfloat16,
-            device_map="auto"
-        )
-        
-        # Create text generation pipeline
+
+        if use_4bit:
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                name_or_path_to_model,
+                quantization_config=bnb_config,
+                device_map="auto",
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                name_or_path_to_model,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+            )
+
+        # Reset max_length in generation_config to avoid conflict with max_new_tokens
+        if hasattr(model, "generation_config"):
+            model.generation_config.max_length = None
+
         return pipeline(
             "text-generation",
             model=model,
-            tokenizer=tokenizer
+            tokenizer=tokenizer,
         )
 
 # Note: The quantized model loading function below is commented out but preserved
