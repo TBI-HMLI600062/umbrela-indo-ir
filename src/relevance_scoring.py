@@ -61,7 +61,7 @@ def get_relevance_score_baseline(prompt: str, pipeline, system_message: str) -> 
         # Generate model output
         outputs = pipeline(
             prompt,
-            max_new_tokens=100,
+            max_new_tokens=30,
             eos_token_id=terminators,
             pad_token_id=128009,
             do_sample=False,
