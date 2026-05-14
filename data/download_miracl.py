@@ -106,7 +106,7 @@ def save_split(df, split_name: str, out_dir: Path, save_human_qrels: bool = Fals
                 "negative_docids": neg_ids,
             }) + "\n")
 
-    # human qrels (only test split has ground truth)
+    # human qrels — save all annotated pairs (rel=1 for positives, rel=0 for negatives)
     if save_human_qrels:
         human_dir.mkdir(parents=True, exist_ok=True)
         qrels_path = human_dir / f"{split_name}.txt"
@@ -115,6 +115,8 @@ def save_split(df, split_name: str, out_dir: Path, save_human_qrels: bool = Fals
                 qid = str(row["query_id"])
                 for p in row.get("positive_passages", []):
                     f.write(f"{qid} 0 {p['docid']} 1\n")
+                for p in row.get("negative_passages", []):
+                    f.write(f"{qid} 0 {p['docid']} 0\n")
         print(f"Human qrels saved: {qrels_path}")
 
     n_queries = len(df)
@@ -150,8 +152,8 @@ def main():
     train_split_df = train_df.iloc[n_val:].reset_index(drop=True)
 
     print(f"Train/val split (seed={args.seed}, val_ratio={args.val_ratio}):")
-    save_split(train_split_df, "train", out_dir, save_human_qrels=False)
-    save_split(val_df, "val", out_dir, save_human_qrels=False)
+    save_split(train_split_df, "train", out_dir, save_human_qrels=True)
+    save_split(val_df, "val", out_dir, save_human_qrels=True)
 
     # --- Download MIRACL dev → becomes test (has human qrels) ---
     print(f"\nDownloading MIRACL-{args.lang.upper()} dev split (→ test)...")
