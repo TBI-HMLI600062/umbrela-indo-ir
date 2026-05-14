@@ -130,16 +130,21 @@ def encode_chunk(
     out_dir: Path,
 ) -> tuple[Path, Path]:
     """Encode one chunk, build a FAISS index, write both files, return their paths."""
+    # Sort by document length so each batch has similarly-sized sequences,
+    # minimising padding tokens and maximising effective GPU utilisation.
+    paired = sorted(zip(docs, docids), key=lambda x: len(x[0]))
+    docs_sorted, docids_sorted = zip(*paired)
+
     all_embs: list[np.ndarray] = []
-    n_batches = (len(docs) + args.batch_size - 1) // args.batch_size
+    n_batches = (len(docs_sorted) + args.batch_size - 1) // args.batch_size
 
     for i in tqdm(
-        range(0, len(docs), args.batch_size),
+        range(0, len(docs_sorted), args.batch_size),
         total=n_batches,
         desc=f"  Chunk {chunk_idx} — encoding",
         leave=False,
     ):
-        batch = docs[i : i + args.batch_size]
+        batch = docs_sorted[i : i + args.batch_size]
         all_embs.append(encode_batch(model, tokenizer, batch, args.device, use_last_token))
         if args.device == "cuda" and (i // args.batch_size) % 100 == 0:
             torch.cuda.empty_cache()
@@ -152,7 +157,7 @@ def encode_chunk(
     faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
     docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
     faiss.write_index(index, str(faiss_path))
-    np.save(docids_path, np.array(docids))
+    np.save(docids_path, np.array(docids_sorted))
 
     print(
         f"  Chunk {chunk_idx}: {index.ntotal:,} vectors  "
@@ -208,6 +213,7 @@ def main():
     model = AutoModel.from_pretrained(
         args.model,
         torch_dtype=torch.bfloat16,
+        attn_implementation="sdpa",
         trust_remote_code=True,
     ).to(args.device).eval()
 
@@ -236,10 +242,15 @@ def main():
 
             if len(chunk_docs) == args.chunk_size:
                 print(f"\nChunk {chunk_idx}  ({len(chunk_docs):,} docs, total so far: {total_docs:,})")
-                faiss_path, docids_path = encode_chunk(
-                    chunk_idx, chunk_docs, chunk_docids,
-                    model, tokenizer, args, use_last_token, out_dir,
-                )
+                faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
+                docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
+                if faiss_path.exists() and docids_path.exists():
+                    print(f"  Found local checkpoint for Chunk {chunk_idx}, skipping encoding and proceeding to upload.")
+                else:
+                    faiss_path, docids_path = encode_chunk(
+                        chunk_idx, chunk_docs, chunk_docids,
+                        model, tokenizer, args, use_last_token, out_dir,
+                    )
                 if api:
                     upload_and_clean(api, args.hf_repo, faiss_path, docids_path, chunk_idx)
                 chunk_docs, chunk_docids = [], []
@@ -248,10 +259,15 @@ def main():
     # Final partial chunk
     if chunk_docs:
         print(f"\nChunk {chunk_idx}  ({len(chunk_docs):,} docs, total: {total_docs:,})")
-        faiss_path, docids_path = encode_chunk(
-            chunk_idx, chunk_docs, chunk_docids,
-            model, tokenizer, args, use_last_token, out_dir,
-        )
+        faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
+        docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
+        if faiss_path.exists() and docids_path.exists():
+            print(f"  Found local checkpoint for Chunk {chunk_idx}, skipping encoding and proceeding to upload.")
+        else:
+            faiss_path, docids_path = encode_chunk(
+                chunk_idx, chunk_docs, chunk_docids,
+                model, tokenizer, args, use_last_token, out_dir,
+            )
         if api:
             upload_and_clean(api, args.hf_repo, faiss_path, docids_path, chunk_idx)
 
