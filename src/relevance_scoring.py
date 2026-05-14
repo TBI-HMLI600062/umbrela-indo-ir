@@ -37,10 +37,10 @@ def get_relevance_score_baseline(prompt: str, pipeline, system_message: str) -> 
     
     # Handle standard pipeline models
     else:
-        terminators = [
+        terminators = [t for t in [
             pipeline.tokenizer.eos_token_id,
-            pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        ]
+            pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>"),
+        ] if t is not None]
         
         # Process chat template if available
         if hasattr(pipeline.tokenizer, "apply_chat_template"):
