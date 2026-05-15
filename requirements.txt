@@ -13,4 +13,5 @@ jsonlines>=4.0
 tqdm>=4.66
 huggingface_hub>=0.20
 together
+openai>=1.0
 vllm>=0.6.0
