@@ -31,7 +31,7 @@ Implemented the full end-to-end pipeline: LLM judge inference, Cohen's kappa eva
 Qrel generation for the test split (9,668 pairs) completed and kappa computed. Size ablation scripts implemented to study how the number of training qrels affects reranker quality.
 
 **Vincent — SahabatAI-Llama3 Judge**
-Full inference run completed. Kaggle notebook finalized with pipeline fixes (model loading, data download, 4-bit quantization).
+Inference on the test split (9,668 pairs) is completed using an unquantized model hosted on vast.ai. Full inference run on the train split is currently underway with 16,829 out of 33,076 pairs processed. Scripts are updated to ensure full precision model loading and bypass previous memory constraints.
 
 **Arvin — First-Stage Retrieval**
 Implemented BM25 (bm25s, no Java dependency), BGE-M3 dense retrieval with FAISS, and hybrid RRF fusion. Generated top-100 candidate files for all splits (train/val/test). Retrieval scores evaluated and added to results table.
@@ -49,9 +49,10 @@ Qwen2.5-7B corpus encoding completed in chunked batches (~20.8 GB total, 5 FAISS
 |---|---|---|---|
 | Qwen2.5-7B-Instruct | 0.3767 | 30.74% | 31.94% |
 | SahabatAI-Gemma2-9B | 0.3763 | 41.23% | 31.94% |
-| SahabatAI-Llama3-8B | TBD | — | 31.94% |
+| SahabatAI-Llama3-8B | 0.2117 | 66.29% | 31.94% | 
 
-Both Qwen and SahabatAI-Gemma2 achieve moderate agreement (κ ≈ 0.38) with human judgments. Gemma2 tends to overpredict relevant documents (41% vs. 32% human rate), while Qwen is well-calibrated.
+
+Both Qwen and SahabatAI-Gemma2 achieve moderate agreement (κ ≈ 0.38) with human judgments. Gemma2 tends to overpredict relevant documents (41% vs. 32% human rate), while Qwen is well-calibrated. The unquantized SahabatAI-Llama3 model struggles with severe overprediction (66.29% positive rate) which results in the lowest agreement score (κ ≈ 0.21) among the three judges (will be investigated further).
 
 **RQ2 — Retrieval & Reranking** (nDCG@10, test set, 960 queries)
 
