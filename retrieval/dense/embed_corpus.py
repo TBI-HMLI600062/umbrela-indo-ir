@@ -45,7 +45,6 @@ import os
 import time
 from pathlib import Path
 
-import faiss
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -131,35 +130,36 @@ def encode_chunk(
 
     embeddings = embed_texts(llm, docs)
 
-    index = faiss.IndexFlatIP(embeddings.shape[1])
-    index.add(embeddings)
-
-    faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
+    # Save as float16 numpy — half the size of FAISS float32 (~1.5 GB vs ~3 GB
+    # per 300k-doc chunk at dim=2560). FAISS index is built on the fly at
+    # retrieval time from these arrays.
+    emb_path = out_dir / f"embeddings_chunk_{chunk_idx}.fp16.npy"
     docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
-    faiss.write_index(index, str(faiss_path))
+    np.save(emb_path, embeddings.astype(np.float16))
     np.save(docids_path, np.array(docids))
 
     elapsed = time.time() - t0
     rate = len(docs) / max(elapsed, 1e-6)
+    size_gb = emb_path.stat().st_size / 1e9
     print(
-        f"  Chunk {chunk_idx}: {index.ntotal:,} vectors | dim={embeddings.shape[1]} | "
-        f"{elapsed:.0f}s ({rate:.0f} docs/s)"
+        f"  Chunk {chunk_idx}: {len(docs):,} vectors | dim={embeddings.shape[1]} | "
+        f"{size_gb:.2f} GB | {elapsed:.0f}s ({rate:.0f} docs/s)"
     )
-    return faiss_path, docids_path
+    return emb_path, docids_path
 
 
-def upload_and_clean(api, hf_repo: str, hf_folder: str, faiss_path: Path, docids_path: Path, chunk_idx: int):
+def upload_and_clean(api, hf_repo: str, hf_folder: str, emb_path: Path, docids_path: Path, chunk_idx: int):
     """Upload both chunk files to HF subfolder then delete them locally."""
-    for path in (faiss_path, docids_path):
+    for path in (emb_path, docids_path):
         repo_path = f"{hf_folder}/{path.name}"
-        print(f"  Uploading {path.name} → {hf_repo}/{repo_path} ...")
+        print(f"  Uploading {path.name} ({path.stat().st_size/1e9:.2f} GB) → {hf_repo}/{repo_path} ...")
         api.upload_file(
             path_or_fileobj=str(path),
             path_in_repo=repo_path,
             repo_id=hf_repo,
             repo_type="dataset",
         )
-    os.remove(faiss_path)
+    os.remove(emb_path)
     os.remove(docids_path)
     print(f"  Chunk {chunk_idx} uploaded and local files removed.")
 
@@ -276,19 +276,19 @@ def main():
             chunk_docs.append(row.get("doc", row.get("text", "")))
 
             if len(chunk_docs) == args.chunk_size:
-                faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
+                emb_path = out_dir / f"embeddings_chunk_{chunk_idx}.fp16.npy"
                 docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
 
                 chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="encoding")
-                if faiss_path.exists() and docids_path.exists():
+                if emb_path.exists() and docids_path.exists():
                     tqdm.write(f"[chunk {chunk_idx}/{n_chunks-1}] checkpoint found — skipping")
                 else:
-                    faiss_path, docids_path = encode_chunk(
+                    emb_path, docids_path = encode_chunk(
                         chunk_idx, chunk_docs, chunk_docids, llm, out_dir,
                     )
                 if api:
                     chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="uploading")
-                    upload_and_clean(api, args.hf_repo, args.hf_folder, faiss_path, docids_path, chunk_idx)
+                    upload_and_clean(api, args.hf_repo, args.hf_folder, emb_path, docids_path, chunk_idx)
 
                 docs_done += len(chunk_docs)
                 elapsed = time.time() - run_start
@@ -307,19 +307,19 @@ def main():
 
     # Final partial chunk
     if chunk_docs:
-        faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
+        emb_path = out_dir / f"embeddings_chunk_{chunk_idx}.fp16.npy"
         docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
 
         chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="encoding")
-        if faiss_path.exists() and docids_path.exists():
+        if emb_path.exists() and docids_path.exists():
             tqdm.write(f"[chunk {chunk_idx}/{n_chunks-1}] checkpoint found — skipping")
         else:
-            faiss_path, docids_path = encode_chunk(
+            emb_path, docids_path = encode_chunk(
                 chunk_idx, chunk_docs, chunk_docids, llm, out_dir,
             )
         if api:
             chunk_bar.set_postfix(chunk=chunk_idx, status="uploading")
-            upload_and_clean(api, args.hf_repo, args.hf_folder, faiss_path, docids_path, chunk_idx)
+            upload_and_clean(api, args.hf_repo, args.hf_folder, emb_path, docids_path, chunk_idx)
 
         docs_done += len(chunk_docs)
         chunk_bar.update(1)
