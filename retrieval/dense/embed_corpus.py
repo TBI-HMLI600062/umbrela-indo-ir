@@ -1,28 +1,37 @@
 """
-Encode MIRACL-ID corpus with a dense encoder and build per-chunk FAISS indexes.
+Encode MIRACL-ID corpus with Qwen3-Embedding-4B via vLLM and build per-chunk FAISS indexes.
 
 Processes the corpus in shards of --chunk-size docs. Each shard is encoded,
 saved as index_chunk_X.faiss + docids_chunk_X.npy, optionally uploaded to a
-Hugging Face dataset repo, then deleted locally to keep disk usage low.
+HuggingFace dataset repo subfolder, then deleted locally to keep disk usage low.
+Script is resume-safe — existing chunk files are skipped automatically.
 
 Args:
-    --model         HF encoder model ID (BAAI/bge-m3 or Qwen/Qwen2.5-7B-Instruct)
-    --corpus        corpus JSONL file (default: data/miracl-id/corpus/corpus.jsonl)
-    --output        output directory for chunk files
-    --batch-size    encoding batch size (default: 64)
-    --chunk-size    documents per shard (default: 300000)
-    --device        cuda | cpu (default: cuda)
-    --mode          encoding mode label, informational only (default: embedding)
-    --hf-repo       HuggingFace dataset repo ID; if set, each chunk is uploaded
-                    then deleted locally (requires HF_TOKEN env var)
+    --model           HF encoder model ID (default: Qwen/Qwen3-Embedding-4B)
+    --corpus          corpus JSONL file (default: data/miracl-id/corpus/corpus.jsonl)
+    --output          output directory for chunk files
+    --chunk-size      documents per shard (default: 300000)
+    --tensor-parallel number of GPUs for tensor parallelism (default: all available)
+    --gpu-mem-util    vLLM GPU memory utilization 0.0–1.0 (default: 0.90)
+    --max-model-len   max token length passed to vLLM (default: 8192)
+    --hf-repo         HuggingFace dataset repo ID; if set, each chunk is uploaded
+                      then deleted locally (requires HF_TOKEN env var)
+    --hf-folder       subfolder inside hf-repo for this model's chunks (default: qwen3-embed-4b)
+    --smoke-docs      smoke-test mode: encode only N docs, print diagnostics, exit without saving
 
-Example (Karol — Qwen, chunked + upload):
+Full run (Karol — Qwen3-Embedding-4B, multi-GPU + upload):
     nohup python retrieval/dense/embed_corpus.py \\
-        --model Qwen/Qwen2.5-7B-Instruct \\
-        --output embeddings/qwen/ \\
-        --batch-size 64 \\
-        --hf-repo username/my-embeddings \\
-        > log_qwen_encode.txt 2>&1 &
+        --model Qwen/Qwen3-Embedding-4B \\
+        --output embeddings/qwen3-embed-4b/ \\
+        --hf-repo fassabilf/umbrela-indo-ir \\
+        --hf-folder qwen3-embed-4b \\
+        > log_qwen3_encode.txt 2>&1 &
+
+Smoke test (sanity check before full run, ~1 min):
+    python retrieval/dense/embed_corpus.py \\
+        --model Qwen/Qwen3-Embedding-4B \\
+        --output embeddings/qwen3-embed-4b/ \\
+        --smoke-docs 32
 
 Output files per chunk X:
     {output}/index_chunk_{X}.faiss   — FAISS IndexFlatIP (cosine sim, L2-normalised)
@@ -31,88 +40,79 @@ Output files per chunk X:
 
 import argparse
 import json
+import math
 import os
+import time
 from pathlib import Path
 
 import faiss
 import numpy as np
 import torch
-import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
-
-# Decoder-only architectures use last-token pooling; all others use mean pooling.
-_DECODER_MODEL_TYPES = {"qwen2", "llama", "mistral", "gemma", "phi", "falcon"}
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Encode corpus with dense encoder + FAISS.")
-    parser.add_argument("--model", required=True, help="HF encoder model ID")
+    parser = argparse.ArgumentParser(description="Encode corpus with Qwen3-Embedding via vLLM + FAISS.")
+    parser.add_argument("--model", default="Qwen/Qwen3-Embedding-4B", help="HF encoder model ID")
     parser.add_argument("--corpus", default="data/miracl-id/corpus/corpus.jsonl")
     parser.add_argument("--output", required=True, help="Output directory for chunk files")
-    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--chunk-size", type=int, default=300_000,
                         help="Documents per shard (default: 300000)")
-    parser.add_argument("--device", default="cuda")
-    parser.add_argument("--mode", default="embedding",
-                        help="Encoding mode label (default: embedding)")
+    parser.add_argument("--tensor-parallel", type=int, default=None,
+                        help="GPUs for tensor parallelism (default: all available)")
+    parser.add_argument("--gpu-mem-util", type=float, default=0.90,
+                        help="vLLM GPU memory utilization (default: 0.90)")
+    parser.add_argument("--max-model-len", type=int, default=8192,
+                        help="Max token length for vLLM (default: 8192)")
     parser.add_argument("--hf-repo", default=None,
                         help="HuggingFace dataset repo ID for upload + local cleanup")
+    parser.add_argument("--hf-folder", default="qwen3-embed-4b",
+                        help="Subfolder inside hf-repo for this model's chunks (default: qwen3-embed-4b)")
+    parser.add_argument("--smoke-docs", type=int, default=None,
+                        help="Smoke-test mode: encode only N docs, print diagnostics, exit without saving")
     return parser.parse_args()
-
-
-# ---------------------------------------------------------------------------
-# Pooling helpers
-# ---------------------------------------------------------------------------
-
-def last_token_pool(hidden: torch.Tensor) -> torch.Tensor:
-    """Return the last token's hidden state.
-
-    Correct only when tokenizer.padding_side == "left": left-padding pushes
-    all real tokens to the right, so the last real token is always at index -1
-    regardless of sequence length. Using attention_mask.sum-1 here would be
-    wrong because that calculation assumes right-padded sequences.
-    """
-    return hidden[:, -1, :]
-
-
-def mean_pool(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-    """Mean pool over non-padding tokens."""
-    mask = attention_mask.unsqueeze(-1).float()
-    return (hidden * mask).sum(dim=1) / mask.sum(dim=1)
 
 
 # ---------------------------------------------------------------------------
 # Encoding
 # ---------------------------------------------------------------------------
 
-def encode_batch(
-    model: AutoModel,
-    tokenizer: AutoTokenizer,
-    texts: list[str],
-    device: str,
-    use_last_token: bool,
-    max_length: int = 512,
-) -> np.ndarray:
-    """Tokenise and encode one batch; return L2-normalised float32 numpy array."""
-    encoded = tokenizer(
-        texts,
-        padding=True,
-        truncation=True,
-        max_length=max_length,
-        return_tensors="pt",
-    ).to(device)
+def load_llm(args):
+    from vllm import LLM
 
-    with torch.no_grad():
-        out = model(**encoded)
+    n_gpus = args.tensor_parallel or torch.cuda.device_count() or 1
+    print(f"Loading model  : {args.model}")
+    print(f"Tensor parallel: {n_gpus} GPU(s)")
+    print(f"GPU mem util   : {args.gpu_mem_util}")
+    print(f"Max model len  : {args.max_model_len}")
 
-    embs = (
-        last_token_pool(out.last_hidden_state)
-        if use_last_token
-        else mean_pool(out.last_hidden_state, encoded["attention_mask"])
+    return LLM(
+        model=args.model,
+        runner="pooling",   # vLLM >=0.21: replaces task="embed"
+        convert="embed",
+        tensor_parallel_size=n_gpus,
+        gpu_memory_utilization=args.gpu_mem_util,
+        max_model_len=args.max_model_len,
+        dtype="bfloat16",
+        enforce_eager=False,
     )
-    embs = F.normalize(embs.float(), dim=-1)
-    return embs.cpu().numpy()
+
+
+def embed_texts(llm, texts: list[str]) -> np.ndarray:
+    """Encode texts with vLLM; return L2-normalised float32 array (vLLM normalises internally)."""
+    # Sort by length so vLLM can bucket similar-length sequences together,
+    # reducing wasted padding even within its continuous batching scheduler.
+    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+    sorted_texts = [texts[i] for i in order]
+
+    outputs = llm.embed(sorted_texts)
+    embs = np.array([o.outputs.embedding for o in outputs], dtype=np.float32)
+
+    # Restore original order
+    restore = [0] * len(order)
+    for new_i, orig_i in enumerate(order):
+        restore[orig_i] = new_i
+    return embs[restore]
 
 
 # ---------------------------------------------------------------------------
@@ -123,33 +123,13 @@ def encode_chunk(
     chunk_idx: int,
     docs: list[str],
     docids: list[str],
-    model: AutoModel,
-    tokenizer: AutoTokenizer,
-    args,
-    use_last_token: bool,
+    llm,
     out_dir: Path,
 ) -> tuple[Path, Path]:
-    """Encode one chunk, build a FAISS index, write both files, return their paths."""
-    # Sort by document length so each batch has similarly-sized sequences,
-    # minimising padding tokens and maximising effective GPU utilisation.
-    paired = sorted(zip(docs, docids), key=lambda x: len(x[0]))
-    docs_sorted, docids_sorted = zip(*paired)
+    t0 = time.time()
+    print(f"  Encoding {len(docs):,} docs...")
 
-    all_embs: list[np.ndarray] = []
-    n_batches = (len(docs_sorted) + args.batch_size - 1) // args.batch_size
-
-    for i in tqdm(
-        range(0, len(docs_sorted), args.batch_size),
-        total=n_batches,
-        desc=f"  Chunk {chunk_idx} — encoding",
-        leave=False,
-    ):
-        batch = docs_sorted[i : i + args.batch_size]
-        all_embs.append(encode_batch(model, tokenizer, batch, args.device, use_last_token))
-        if args.device == "cuda" and (i // args.batch_size) % 100 == 0:
-            torch.cuda.empty_cache()
-
-    embeddings = np.concatenate(all_embs, axis=0).astype(np.float32)
+    embeddings = embed_texts(llm, docs)
 
     index = faiss.IndexFlatIP(embeddings.shape[1])
     index.add(embeddings)
@@ -157,22 +137,25 @@ def encode_chunk(
     faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
     docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
     faiss.write_index(index, str(faiss_path))
-    np.save(docids_path, np.array(docids_sorted))
+    np.save(docids_path, np.array(docids))
 
+    elapsed = time.time() - t0
+    rate = len(docs) / max(elapsed, 1e-6)
     print(
-        f"  Chunk {chunk_idx}: {index.ntotal:,} vectors  "
-        f"({faiss_path.name}, {docids_path.name})"
+        f"  Chunk {chunk_idx}: {index.ntotal:,} vectors | dim={embeddings.shape[1]} | "
+        f"{elapsed:.0f}s ({rate:.0f} docs/s)"
     )
     return faiss_path, docids_path
 
 
-def upload_and_clean(api, hf_repo: str, faiss_path: Path, docids_path: Path, chunk_idx: int):
-    """Upload both chunk files to HF then delete them locally."""
+def upload_and_clean(api, hf_repo: str, hf_folder: str, faiss_path: Path, docids_path: Path, chunk_idx: int):
+    """Upload both chunk files to HF subfolder then delete them locally."""
     for path in (faiss_path, docids_path):
-        print(f"  Uploading {path.name} → {hf_repo} ...")
+        repo_path = f"{hf_folder}/{path.name}"
+        print(f"  Uploading {path.name} → {hf_repo}/{repo_path} ...")
         api.upload_file(
             path_or_fileobj=str(path),
-            path_in_repo=path.name,
+            path_in_repo=repo_path,
             repo_id=hf_repo,
             repo_type="dataset",
         )
@@ -182,11 +165,82 @@ def upload_and_clean(api, hf_repo: str, faiss_path: Path, docids_path: Path, chu
 
 
 # ---------------------------------------------------------------------------
+# Smoke test
+# ---------------------------------------------------------------------------
+
+def run_smoke_test(args, llm):
+    """Encode --smoke-docs documents, print diagnostics, exit. No files saved."""
+    print(f"\n{'='*60}")
+    print(f"SMOKE TEST — {args.smoke_docs} docs from {args.corpus}")
+    print(f"{'='*60}")
+
+    corpus_path = Path(args.corpus)
+    docs, docids = [], []
+    with open(corpus_path) as f:
+        for line in f:
+            row = json.loads(line)
+            docids.append(row["docid"])
+            docs.append(row.get("doc", row.get("text", "")))
+            if len(docs) == args.smoke_docs:
+                break
+
+    if not docs:
+        print("ERROR: corpus is empty or not found.")
+        return
+
+    print(f"Loaded {len(docs)} docs. Encoding...")
+    t0 = time.time()
+    embs = embed_texts(llm, docs)
+    elapsed = time.time() - t0
+
+    norms = np.linalg.norm(embs, axis=1)
+    sim_matrix = embs @ embs.T
+
+    print(f"\n--- Results ---")
+    print(f"Shape          : {embs.shape}")
+    print(f"Dtype          : {embs.dtype}")
+    print(f"Elapsed        : {elapsed:.1f}s  ({len(docs)/elapsed:.1f} docs/s)")
+    print(f"Norm (mean/min/max): {norms.mean():.4f} / {norms.min():.4f} / {norms.max():.4f}  (expect ~1.0)")
+    print(f"Self-sim diag  : {np.diag(sim_matrix).mean():.4f}  (expect ~1.0)")
+    if len(docs) >= 2:
+        off_diag = sim_matrix[np.triu_indices(len(docs), k=1)]
+        print(f"Cross-sim mean : {off_diag.mean():.4f}  (expect < 1.0)")
+        print(f"Cross-sim max  : {off_diag.max():.4f}")
+
+    print(f"\nSample docids  : {docids[:3]}")
+    print(f"Sample doc[0]  : {docs[0][:120]}...")
+
+    all_ok = (
+        embs.shape[1] > 0
+        and norms.mean() > 0.99
+        and np.diag(sim_matrix).mean() > 0.99
+    )
+    print(f"\n{'SMOKE TEST PASSED' if all_ok else 'SMOKE TEST FAILED'}")
+    if not all_ok:
+        print("  Check: norms should be ~1.0 and self-sim should be ~1.0")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+def _count_lines(path: Path) -> int:
+    """Fast line count without parsing JSON."""
+    n = 0
+    with open(path, "rb") as f:
+        for _ in f:
+            n += 1
+    return n
+
+
 def main():
     args = parse_args()
+
+    llm = load_llm(args)
+
+    if args.smoke_docs:
+        run_smoke_test(args, llm)
+        return
 
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -199,79 +253,80 @@ def main():
         if not hf_token:
             raise EnvironmentError("--hf-repo requires HF_TOKEN environment variable to be set.")
         api = HfApi(token=hf_token)
-        print(f"HuggingFace upload enabled → {args.hf_repo}")
+        print(f"HuggingFace upload enabled → {args.hf_repo}/{args.hf_folder}/")
 
-    print(f"Loading model: {args.model}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    # Left-padding so the last real token is always at position -1, which is
-    # what last_token_pool relies on. Right-padding (the default for most
-    # tokenizers) would place padding tokens at -1 and break the pooling.
-    tokenizer.padding_side = "left"
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    model = AutoModel.from_pretrained(
-        args.model,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-        trust_remote_code=True,
-    ).to(args.device).eval()
-
-    use_last_token = model.config.model_type in _DECODER_MODEL_TYPES
-    print(
-        f"Model type : {model.config.model_type}  |  "
-        f"Pooling : {'last-token (left-pad)' if use_last_token else 'mean'}  |  "
-        f"Precision : bfloat16"
-    )
-
-    # --- Stream corpus, flush a chunk whenever it fills ---
     corpus_path = Path(args.corpus)
-    print(f"\nReading corpus: {corpus_path}")
+    print(f"\nCounting docs in {corpus_path} ...")
+    total_docs = _count_lines(corpus_path)
+    n_chunks = math.ceil(total_docs / args.chunk_size)
+    print(f"Corpus: {total_docs:,} docs → {n_chunks} chunk(s) of {args.chunk_size:,}")
 
     chunk_docs: list[str] = []
     chunk_docids: list[str] = []
     chunk_idx = 0
-    total_docs = 0
+    docs_done = 0
+    run_start = time.time()
+
+    chunk_bar = tqdm(total=n_chunks, desc="Chunks", unit="chunk", position=0)
 
     with open(corpus_path) as f:
         for line in f:
             row = json.loads(line)
             chunk_docids.append(row["docid"])
-            chunk_docs.append(row["doc"])
-            total_docs += 1
+            chunk_docs.append(row.get("doc", row.get("text", "")))
 
             if len(chunk_docs) == args.chunk_size:
-                print(f"\nChunk {chunk_idx}  ({len(chunk_docs):,} docs, total so far: {total_docs:,})")
                 faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
                 docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
+
+                chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="encoding")
                 if faiss_path.exists() and docids_path.exists():
-                    print(f"  Found local checkpoint for Chunk {chunk_idx}, skipping encoding and proceeding to upload.")
+                    tqdm.write(f"[chunk {chunk_idx}/{n_chunks-1}] checkpoint found — skipping")
                 else:
                     faiss_path, docids_path = encode_chunk(
-                        chunk_idx, chunk_docs, chunk_docids,
-                        model, tokenizer, args, use_last_token, out_dir,
+                        chunk_idx, chunk_docs, chunk_docids, llm, out_dir,
                     )
                 if api:
-                    upload_and_clean(api, args.hf_repo, faiss_path, docids_path, chunk_idx)
+                    chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="uploading")
+                    upload_and_clean(api, args.hf_repo, args.hf_folder, faiss_path, docids_path, chunk_idx)
+
+                docs_done += len(chunk_docs)
+                elapsed = time.time() - run_start
+                rate = docs_done / max(elapsed, 1e-6)
+                eta_min = (total_docs - docs_done) / max(rate, 1e-6) / 60
+                chunk_bar.set_postfix(
+                    chunk=f"{chunk_idx}/{n_chunks-1}",
+                    docs=f"{docs_done:,}/{total_docs:,}",
+                    rate=f"{rate:.0f} d/s",
+                    ETA=f"{eta_min:.0f}m",
+                )
+                chunk_bar.update(1)
+
                 chunk_docs, chunk_docids = [], []
                 chunk_idx += 1
 
     # Final partial chunk
     if chunk_docs:
-        print(f"\nChunk {chunk_idx}  ({len(chunk_docs):,} docs, total: {total_docs:,})")
         faiss_path = out_dir / f"index_chunk_{chunk_idx}.faiss"
         docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
+
+        chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="encoding")
         if faiss_path.exists() and docids_path.exists():
-            print(f"  Found local checkpoint for Chunk {chunk_idx}, skipping encoding and proceeding to upload.")
+            tqdm.write(f"[chunk {chunk_idx}/{n_chunks-1}] checkpoint found — skipping")
         else:
             faiss_path, docids_path = encode_chunk(
-                chunk_idx, chunk_docs, chunk_docids,
-                model, tokenizer, args, use_last_token, out_dir,
+                chunk_idx, chunk_docs, chunk_docids, llm, out_dir,
             )
         if api:
-            upload_and_clean(api, args.hf_repo, faiss_path, docids_path, chunk_idx)
+            chunk_bar.set_postfix(chunk=chunk_idx, status="uploading")
+            upload_and_clean(api, args.hf_repo, args.hf_folder, faiss_path, docids_path, chunk_idx)
 
-    print(f"\nDone. {total_docs:,} documents encoded across {chunk_idx + 1} chunk(s).")
+        docs_done += len(chunk_docs)
+        chunk_bar.update(1)
+
+    chunk_bar.close()
+    total_elapsed = time.time() - run_start
+    print(f"\nDone. {docs_done:,} docs | {chunk_idx + 1} chunk(s) | {total_elapsed/60:.1f} min total")
 
 
 if __name__ == "__main__":
