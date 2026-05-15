@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Optional
 import json
 import re
 import torch
-from model_utils import TogetherPipeline
+from model_utils import APIBasePipeline
 from prompts import get_umbrella_prompt
 
 
@@ -26,8 +26,8 @@ def get_relevance_score_baseline(prompt: str, pipeline, system_message: str) -> 
         print("Initial messages for verification:")
         print(messages)
 
-    # Handle Together AI models
-    if isinstance(pipeline, TogetherPipeline):
+    # Handle API-based models (Together, OpenAI, DeepSeek)
+    if isinstance(pipeline, APIBasePipeline):
         if not hasattr(get_relevance_score_baseline, "output_from_together"):
             get_relevance_score_baseline.output_from_together = True
             print("Using Together AI model for inference")
