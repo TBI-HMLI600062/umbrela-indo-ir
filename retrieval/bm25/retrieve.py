@@ -52,8 +52,8 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading BM25 index from {index_dir}...")
-    index = bm25s.BM25.load(str(index_dir), load_corpus=True)
-    docids = index.corpus
+    index = bm25s.BM25.load(str(index_dir), load_corpus=False)
+    docids = np.load(index_dir / "docids.npy", allow_pickle=True)
     print(f"Index loaded: {len(docids):,} passages")
 
     print(f"Loading topics from {args.topics}...")
