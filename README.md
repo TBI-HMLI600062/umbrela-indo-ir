@@ -8,6 +8,68 @@ and analyze self-reinforcing bias (RQ3).
 
 ---
 
+## Progress Report
+
+> Last updated: 2026-05-15
+
+### Base Paper
+
+This project extends **UMBRELA** — an LLM-as-Judge framework for automatic relevance assessment — to the Indonesian language domain. The original paper:
+
+> Naghmeh Farzi and Laura Dietz. *UMBRELA: UMbrela is the Replacement for BERT-based Relevance LAbeling.* SIGIR 2025.
+
+Our extension uses the **MIRACL-ID** dataset (~1.44M Indonesian Wikipedia passages, 960 test queries with human qrels) to evaluate three research questions: (RQ1) which LLM judge best aligns with human relevance judgments in Indonesian, (RQ2) whether LLM-generated qrels can train a reranker that improves over BM25, and (RQ3) whether judge choice introduces self-reinforcing bias.
+
+---
+
+### Team Contributions
+
+**Faiz — Qwen2.5-7B-Instruct Judge + Reranker Training**
+Implemented the full end-to-end pipeline: LLM judge inference, Cohen's kappa evaluation against human qrels, reranker training (triplet preparation → CrossEncoder fine-tuning → TREC-format inference → nDCG@10 evaluation). Full qrel generation across all 51k query-document pairs completed.
+
+**Radit — SahabatAI-Gemma2 Judge**
+Qrel generation for the test split (9,668 pairs) completed and kappa computed. Size ablation scripts implemented to study how the number of training qrels affects reranker quality.
+
+**Vincent — SahabatAI-Llama3 Judge**
+Inference on the test split (9,668 pairs) is completed using an unquantized model hosted on vast.ai. Full inference run on the train split is currently underway with 16,829 out of 33,076 pairs processed. Scripts are updated to ensure full precision model loading and bypass previous memory constraints.
+
+**Arvin — First-Stage Retrieval**
+Implemented BM25 (bm25s, no Java dependency), BGE-M3 dense retrieval with FAISS, and hybrid RRF fusion. Generated top-100 candidate files for all splits (train/val/test). Retrieval scores evaluated and added to results table.
+
+**Karol — Corpus Encoding + Bias Analysis (RQ3)**
+Qwen2.5-7B corpus encoding completed in chunked batches (~20.8 GB total, 5 FAISS shards, uploaded to HuggingFace). RQ3 bias analysis implementation in progress.
+
+---
+
+### Preliminary Results
+
+**RQ1 — Judge Agreement** (Cohen's κ vs. human qrels, test set, 9,668 pairs)
+
+| Judge Model | κ | LLM pos. rate | Human pos. rate |
+|---|---|---|---|
+| Qwen2.5-7B-Instruct | 0.3767 | 30.74% | 31.94% |
+| SahabatAI-Gemma2-9B | 0.3763 | 41.23% | 31.94% |
+| SahabatAI-Llama3-8B | 0.2117 | 66.29% | 31.94% | 
+
+
+Both Qwen and SahabatAI-Gemma2 achieve moderate agreement (κ ≈ 0.38) with human judgments. Gemma2 tends to overpredict relevant documents (41% vs. 32% human rate), while Qwen is well-calibrated. The unquantized SahabatAI-Llama3 model struggles with severe overprediction (66.29% positive rate) which results in the lowest agreement score (κ ≈ 0.21) among the three judges (will be investigated further).
+
+**RQ2 — Retrieval & Reranking** (nDCG@10, test set, 960 queries)
+
+| System | nDCG@10 |
+|---|---|
+| BM25 (baseline) | 0.3053 |
+| BM25 + Qwen-trained reranker | 0.2832 |
+| Qwen-embed dense retrieval | 0.0066 |
+| BGE-M3 dense retrieval | **0.5604** |
+| Hybrid BM25 + BGE-M3 (RRF) | 0.5191 |
+
+BGE-M3 substantially outperforms BM25 on MIRACL-ID. The Qwen-trained reranker on BM25 candidates shows a slight regression, suggesting the reranker training or qrel threshold may need further tuning.
+
+**RQ3 — Bias Analysis**: pending (Karol)
+
+---
+
 ## Quick Start (per person)
 
 ### Step 0 — Clone & install
