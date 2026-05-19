@@ -23,7 +23,7 @@ Full run (Karol — Qwen3-Embedding-4B, multi-GPU + upload):
     nohup python retrieval/dense/embed_corpus.py \\
         --model Qwen/Qwen3-Embedding-4B \\
         --output embeddings/qwen3-embed-4b/ \\
-        --hf-repo fassabilf/umbrela-indo-ir \\
+        --hf-repo karolinajocelyn/umbrela-indo-ir \\
         --hf-folder qwen3-embed-4b \\
         > log_qwen3_encode.txt 2>&1 &
 
@@ -97,8 +97,26 @@ def load_llm(args):
     )
 
 
-def embed_texts(llm, texts: list[str]) -> np.ndarray:
+def _truncate_to_max_tokens(tokenizer, text: str, content_limit: int) -> str:
+    """Truncate to content_limit tokens, excluding special tokens (BOS/EOS added by vLLM later)."""
+    ids = tokenizer.encode(text, add_special_tokens=False)
+    if len(ids) <= content_limit:
+        return text
+    return tokenizer.decode(ids[:content_limit], skip_special_tokens=False)
+
+
+def embed_texts(llm, texts: list[str], max_tokens: int = 8192) -> np.ndarray:
     """Encode texts with vLLM; return L2-normalised float32 array (vLLM normalises internally)."""
+    # Reserve 2 slots for BOS/EOS that vLLM adds; truncate content to the remainder.
+    # Char threshold = content_limit: a doc with ≤ content_limit chars cannot exceed
+    # content_limit tokens even in the worst case (1 char = 1 token).
+    content_limit = max_tokens - 2
+    tokenizer = llm.get_tokenizer()
+    texts = [
+        _truncate_to_max_tokens(tokenizer, t, content_limit) if len(t) > content_limit else t
+        for t in texts
+    ]
+
     # Sort by length so vLLM can bucket similar-length sequences together,
     # reducing wasted padding even within its continuous batching scheduler.
     order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
@@ -124,11 +142,12 @@ def encode_chunk(
     docids: list[str],
     llm,
     out_dir: Path,
+    max_tokens: int = 8192,
 ) -> tuple[Path, Path]:
     t0 = time.time()
     print(f"  Encoding {len(docs):,} docs...")
 
-    embeddings = embed_texts(llm, docs)
+    embeddings = embed_texts(llm, docs, max_tokens)
 
     # Save as float16 numpy — half the size of FAISS float32 (~1.5 GB vs ~3 GB
     # per 300k-doc chunk at dim=2560). FAISS index is built on the fly at
@@ -149,18 +168,31 @@ def encode_chunk(
 
 
 def upload_and_clean(api, hf_repo: str, hf_folder: str, emb_path: Path, docids_path: Path, chunk_idx: int):
-    """Upload both chunk files to HF subfolder then delete them locally."""
-    for path in (emb_path, docids_path):
+    """Upload both chunk files to HF subfolder in parallel, then delete locally."""
+    import concurrent.futures
+
+    def _upload(path: Path):
         repo_path = f"{hf_folder}/{path.name}"
-        print(f"  Uploading {path.name} ({path.stat().st_size/1e9:.2f} GB) → {hf_repo}/{repo_path} ...")
+        size_gb = path.stat().st_size / 1e9
+        print(f"  Uploading {path.name} ({size_gb:.2f} GB) → {hf_repo}/{repo_path} ...")
+        t0 = time.time()
         api.upload_file(
             path_or_fileobj=str(path),
             path_in_repo=repo_path,
             repo_id=hf_repo,
             repo_type="dataset",
         )
-    os.remove(emb_path)
-    os.remove(docids_path)
+        print(f"  {path.name} done in {time.time() - t0:.0f}s")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(_upload, p) for p in (emb_path, docids_path)]
+        for fut in concurrent.futures.as_completed(futures):
+            fut.result()  # propagate any upload exception immediately
+
+    for path in (emb_path, docids_path):
+        os.remove(path)
+    # Leave a marker so the resume logic can skip this chunk even after local files are deleted.
+    (emb_path.parent / f"chunk_{chunk_idx}.done").touch()
     print(f"  Chunk {chunk_idx} uploaded and local files removed.")
 
 
@@ -190,7 +222,7 @@ def run_smoke_test(args, llm):
 
     print(f"Loaded {len(docs)} docs. Encoding...")
     t0 = time.time()
-    embs = embed_texts(llm, docs)
+    embs = embed_texts(llm, docs, args.max_model_len)
     elapsed = time.time() - t0
 
     norms = np.linalg.norm(embs, axis=1)
@@ -248,12 +280,20 @@ def main():
     # Optional HF upload setup
     api = None
     if args.hf_repo:
+        # hf_transfer is a Rust-based uploader (pip install hf_transfer) that splits
+        # large files into parallel chunks — typically 5–10x faster than pure-Python.
+        os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
         from huggingface_hub import HfApi
         hf_token = os.environ.get("HF_TOKEN")
         if not hf_token:
             raise EnvironmentError("--hf-repo requires HF_TOKEN environment variable to be set.")
         api = HfApi(token=hf_token)
-        print(f"HuggingFace upload enabled → {args.hf_repo}/{args.hf_folder}/")
+        try:
+            import hf_transfer  # noqa: F401
+            print(f"HuggingFace upload enabled → {args.hf_repo}/{args.hf_folder}/  [hf_transfer active]")
+        except ImportError:
+            print(f"HuggingFace upload enabled → {args.hf_repo}/{args.hf_folder}/  "
+                  f"[tip: pip install hf_transfer for faster uploads]")
 
     corpus_path = Path(args.corpus)
     print(f"\nCounting docs in {corpus_path} ...")
@@ -279,16 +319,17 @@ def main():
                 emb_path = out_dir / f"embeddings_chunk_{chunk_idx}.fp16.npy"
                 docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
 
+                done_marker = out_dir / f"chunk_{chunk_idx}.done"
                 chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="encoding")
-                if emb_path.exists() and docids_path.exists():
+                if done_marker.exists() or (emb_path.exists() and docids_path.exists()):
                     tqdm.write(f"[chunk {chunk_idx}/{n_chunks-1}] checkpoint found — skipping")
                 else:
                     emb_path, docids_path = encode_chunk(
-                        chunk_idx, chunk_docs, chunk_docids, llm, out_dir,
+                        chunk_idx, chunk_docs, chunk_docids, llm, out_dir, args.max_model_len,
                     )
-                if api:
-                    chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="uploading")
-                    upload_and_clean(api, args.hf_repo, args.hf_folder, emb_path, docids_path, chunk_idx)
+                    if api:
+                        chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="uploading")
+                        upload_and_clean(api, args.hf_repo, args.hf_folder, emb_path, docids_path, chunk_idx)
 
                 docs_done += len(chunk_docs)
                 elapsed = time.time() - run_start
@@ -310,16 +351,17 @@ def main():
         emb_path = out_dir / f"embeddings_chunk_{chunk_idx}.fp16.npy"
         docids_path = out_dir / f"docids_chunk_{chunk_idx}.npy"
 
+        done_marker = out_dir / f"chunk_{chunk_idx}.done"
         chunk_bar.set_postfix(chunk=chunk_idx, docs=f"{docs_done:,}", status="encoding")
-        if emb_path.exists() and docids_path.exists():
+        if done_marker.exists() or (emb_path.exists() and docids_path.exists()):
             tqdm.write(f"[chunk {chunk_idx}/{n_chunks-1}] checkpoint found — skipping")
         else:
             emb_path, docids_path = encode_chunk(
-                chunk_idx, chunk_docs, chunk_docids, llm, out_dir,
+                chunk_idx, chunk_docs, chunk_docids, llm, out_dir, args.max_model_len,
             )
-        if api:
-            chunk_bar.set_postfix(chunk=chunk_idx, status="uploading")
-            upload_and_clean(api, args.hf_repo, args.hf_folder, emb_path, docids_path, chunk_idx)
+            if api:
+                chunk_bar.set_postfix(chunk=chunk_idx, status="uploading")
+                upload_and_clean(api, args.hf_repo, args.hf_folder, emb_path, docids_path, chunk_idx)
 
         docs_done += len(chunk_docs)
         chunk_bar.update(1)
