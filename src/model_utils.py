@@ -3,6 +3,7 @@ Model Utilities Module
 ---------------------
 Handles model loading and initialization for different types of language models:
 - Together AI models (API-based)
+- OpenAI-compatible models: ChatGPT (OpenAI) and DeepSeek
 - Flan-T5 models (sequence-to-sequence)
 - Causal language models (like LLaMA)
 
@@ -10,7 +11,7 @@ All models are configured for optimal performance with appropriate data types
 and device mapping.
 """
 
-from typing import Optional
+from typing import Optional, List, Dict
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
@@ -22,62 +23,92 @@ import torch
 from together import Together
 import together
 import os
-from typing import *
 
 
+class APIBasePipeline:
+    """Base class for all API-based (non-local) pipelines."""
+    pass
 
-class TogetherPipeline:
+
+class TogetherPipeline(APIBasePipeline):
     def __init__(self, model_name: str):
         self.model_name = model_name
         self.api_key = os.getenv("TOGETHER_API_KEY")
         if not self.api_key:
             raise ValueError("TOGETHER_API_KEY environment variable is not set.")
         self.client = Together(api_key=self.api_key)
-    
+
     def __call__(self, messages: List[Dict], max_new_tokens=100, **kwargs):
-        # Use Together API to generate responses
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
             do_sample=False,
             temperature=None,
             top_p=None,
-            
+        )
+        return [{"generated_text": response.choices[0].message.content}]
+
+
+class OpenAIPipeline(APIBasePipeline):
+    """OpenAI-compatible pipeline — handles ChatGPT (OpenAI) and DeepSeek."""
+
+    _PROVIDER_CONFIG = {
+        "openai": {
+            "base_url": "https://api.openai.com/v1",
+            "api_key_env": "OPENAI_API_KEY",
+        },
+        "deepseek": {
+            "base_url": "https://api.deepseek.com",
+            "api_key_env": "DEEPSEEK_API_KEY",
+        },
+    }
+
+    def __init__(self, model_name: str, provider: str):
+        from openai import OpenAI
+        cfg = self._PROVIDER_CONFIG[provider]
+        api_key = os.getenv(cfg["api_key_env"])
+        if not api_key:
+            raise ValueError(f"{cfg['api_key_env']} environment variable is not set.")
+        self.model_name = model_name
+        self.client = OpenAI(base_url=cfg["base_url"], api_key=api_key)
+
+    def __call__(self, messages: List[Dict], max_new_tokens=512, **kwargs):
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            max_tokens=max_new_tokens,
+            temperature=0,
         )
         return [{"generated_text": response.choices[0].message.content}]
 
 
 
 
-def get_model_baseline(name_or_path_to_model: str, use_together: bool = False, use_4bit: bool = False):
+def get_model_baseline(name_or_path_to_model: str, use_together: bool = False,
+                       provider: str = "hf"):
     """
     Load and configure a language model for text generation.
-    
-    This function handles three types of models:
-    1. Together AI models accessed through API
-    2. Flan-T5 models using sequence-to-sequence architecture
-    3. Standard causal language models (like LLaMA)
-    
+
     Args:
-        name_or_path_to_model: Model identifier or path (e.g., "meta-llama/Llama-3-70b")
-        use_together: Whether to use Together AI API
-        
+        name_or_path_to_model: Model ID or local path
+        use_together: Legacy flag — equivalent to provider="together"
+        provider: "hf" (default) | "together" | "openai" | "deepseek"
+
     Returns:
         Configured pipeline ready for text generation
-        
-    Notes:
-        - Models are loaded with bfloat16 precision for efficiency
-        - Device mapping is automatic based on available hardware
-        - Flan-T5 models use text2text-generation pipeline
-        - Other models use standard text-generation pipeline
     """
-    
-    # Together AI API-based model
+    # Legacy compat
     if use_together:
+        provider = "together"
+
+    if provider == "together":
         return TogetherPipeline(model_name=name_or_path_to_model)
-    
-    # Flan-T5 sequence-to-sequence model
-    elif "flan-t5" in name_or_path_to_model.lower():
+
+    if provider in ("openai", "deepseek"):
+        return OpenAIPipeline(model_name=name_or_path_to_model, provider=provider)
+
+    # Local HF model — Flan-T5 sequence-to-sequence
+    if "flan-t5" in name_or_path_to_model.lower():
         # Initialize tokenizer and model
         tokenizer = AutoTokenizer.from_pretrained(name_or_path_to_model)
         model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -95,35 +126,19 @@ def get_model_baseline(name_or_path_to_model: str, use_together: bool = False, u
     
     # Standard causal language model
     else:
+        # Initialize tokenizer and model
         tokenizer = AutoTokenizer.from_pretrained(name_or_path_to_model)
-
-        if use_4bit:
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-            )
-            model = AutoModelForCausalLM.from_pretrained(
-                name_or_path_to_model,
-                quantization_config=bnb_config,
-                device_map="auto",
-            )
-        else:
-            model = AutoModelForCausalLM.from_pretrained(
-                name_or_path_to_model,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-            )
-
-        # Reset max_length in generation_config to avoid conflict with max_new_tokens
-        if hasattr(model, "generation_config"):
-            model.generation_config.max_length = None
-
+        model = AutoModelForCausalLM.from_pretrained(
+            name_or_path_to_model,
+            torch_dtype=torch.bfloat16,
+            device_map="auto"
+        )
+        
+        # Create text generation pipeline
         return pipeline(
             "text-generation",
             model=model,
-            tokenizer=tokenizer,
+            tokenizer=tokenizer
         )
 
 # Note: The quantized model loading function below is commented out but preserved
