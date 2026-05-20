@@ -1,0 +1,2 @@
+judge,llm_qrels,human_qrels,n_pairs,threshold,agreement,kappa,llm_pos_rate,human_pos_rate,human_missing_as_zero,human_extra_pairs
+sahabat_llama_test,results/qrels/sahabat_llama_test.txt,data/miracl-id/qrels/human/test.txt,9668,2,0.557613,0.210285,0.666632,0.319404,6580,0

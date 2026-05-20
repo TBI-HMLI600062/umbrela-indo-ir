@@ -12,6 +12,7 @@ def get_umbrella_prompt(query: str, passage: str, mode: str) -> str:
             - "zeroshot_basic": Zero-shot basic prompt
             - "fewshot_bing": Few-shot Bing-style prompt
             - "fewshot_basic": Few-shot basic prompt
+            - "zeroshot_bing_strict": Strict zero-shot Bing-style prompt
         
     Returns:
         str: Formatted prompt for relevance evaluation
@@ -25,7 +26,13 @@ def get_umbrella_prompt(query: str, passage: str, mode: str) -> str:
     Raises:
         ValueError: If mode is not one of the supported options
     """
-    valid_modes = ["zeroshot_bing", "zeroshot_basic", "fewshot_bing", "fewshot_basic"]
+    valid_modes = [
+        "zeroshot_bing",
+        "zeroshot_basic",
+        "fewshot_bing",
+        "fewshot_basic",
+        "zeroshot_bing_strict",
+    ]
     
     if mode not in valid_modes:
         raise ValueError(f"Mode must be one of {valid_modes}")
@@ -34,7 +41,8 @@ def get_umbrella_prompt(query: str, passage: str, mode: str) -> str:
         "zeroshot_bing": "qrel_zeroshot_bing.txt",
         "zeroshot_basic": "qrel_zeroshot_basic.txt",
         "fewshot_bing": "qrel_fewshot_bing.txt",
-        "fewshot_basic": "qrel_fewshot_basic.txt"
+        "fewshot_basic": "qrel_fewshot_basic.txt",
+        "zeroshot_bing_strict": "qrel_zeroshot_bing_strict.txt",
     }
     
     file_name = file_mapping[mode]

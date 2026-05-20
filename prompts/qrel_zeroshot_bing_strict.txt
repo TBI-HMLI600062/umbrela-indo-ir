@@ -1,0 +1,22 @@
+Given a query and a passage, assign exactly one relevance score on an integer scale from 0 to 3.
+
+Score meanings:
+0 = The passage has nothing to do with the query, or it mentions only unrelated entities/topics.
+1 = The passage is related to the query topic but does not answer the query.
+2 = The passage contains some answer or important evidence for the query, but the answer is incomplete, unclear, or mixed with extra information.
+3 = The passage is dedicated to the query and contains the exact answer.
+
+Important rules:
+- Judge only whether the passage answers the query.
+- Do not give score 2 just because the passage mentions a related name, entity, or broad topic.
+- If the passage is about a different person, place, date, event, or entity than the query asks for, assign 0 or 1.
+- Output exactly one line and nothing else.
+- Do not output reasoning.
+- Do not output M, T, O, explanations, repeated numbers, bullet points, or code.
+- The only valid output format is exactly: ##final score: X
+- X must be one of 0, 1, 2, or 3.
+
+Query: {query}
+Passage: {passage}
+
+##final score:

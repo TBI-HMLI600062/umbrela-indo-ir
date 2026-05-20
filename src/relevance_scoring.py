@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Optional
 import json
 import re
 import torch
-from model_utils import APIBasePipeline
+from model_utils import TogetherPipeline
 from prompts import get_umbrella_prompt
 
 
@@ -26,8 +26,8 @@ def get_relevance_score_baseline(prompt: str, pipeline, system_message: str) -> 
         print("Initial messages for verification:")
         print(messages)
 
-    # Handle API-based models (Together, OpenAI, DeepSeek)
-    if isinstance(pipeline, APIBasePipeline):
+    # Handle Together AI models
+    if isinstance(pipeline, TogetherPipeline):
         if not hasattr(get_relevance_score_baseline, "output_from_together"):
             get_relevance_score_baseline.output_from_together = True
             print("Using Together AI model for inference")
@@ -37,10 +37,11 @@ def get_relevance_score_baseline(prompt: str, pipeline, system_message: str) -> 
     
     # Handle standard pipeline models
     else:
+        unk_id = pipeline.tokenizer.unk_token_id
         terminators = [t for t in [
             pipeline.tokenizer.eos_token_id,
             pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>"),
-        ] if t is not None]
+        ] if t is not None and t != unk_id]
         
         # Process chat template if available
         if hasattr(pipeline.tokenizer, "apply_chat_template"):
@@ -61,7 +62,7 @@ def get_relevance_score_baseline(prompt: str, pipeline, system_message: str) -> 
         # Generate model output
         outputs = pipeline(
             prompt,
-            max_new_tokens=100,
+            max_new_tokens=30,
             eos_token_id=terminators,
             pad_token_id=128009,
             do_sample=False,
