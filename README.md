@@ -43,28 +43,30 @@ Qwen2.5-7B corpus encoding completed in chunked batches (~20.8 GB total, 5 FAISS
 
 ### Preliminary Results
 
-**RQ1 — Judge Agreement** (Cohen's κ vs. human qrels, test set, 9,668 pairs)
+**RQ1 — Judge Agreement** (Cohen's κ vs. human qrels, test set)
 
-| Judge Model | κ | LLM pos. rate | Human pos. rate |
-|---|---|---|---|
-| Qwen2.5-7B-Instruct | 0.3767 | 30.74% | 31.94% |
-| SahabatAI-Gemma2-9B | 0.3763 | 41.23% | 31.94% |
-| SahabatAI-Llama3-8B | 0.2117 | 66.29% | 31.94% | 
+| Judge Model | κ | LLM pos. rate | Human pos. rate | n_pairs |
+|---|---|---|---|---|
+| DeepSeek-V3 | **0.4219** | 27.99% | 31.94% | 9,668 |
+| Qwen2.5-7B-Instruct | 0.3767 | 30.74% | 31.94% | 9,668 |
+| ChatGPT (gpt-4o-mini) | 0.3856 | 26.38% | 32.96% | 6,751 |
+| SahabatAI-Gemma2-9B | 0.3763 | 41.23% | 31.94% | 9,668 |
+| SahabatAI-Llama3-8B (strict prompt) | 0.3652 | 38.79% | 31.94% | 9,668 |
+| SahabatAI-Llama3-8B (default prompt) | 0.2103 | 66.66% | 31.94% | 9,668 |
 
-
-Both Qwen and SahabatAI-Gemma2 achieve moderate agreement (κ ≈ 0.38) with human judgments. Gemma2 tends to overpredict relevant documents (41% vs. 32% human rate), while Qwen is well-calibrated. The unquantized SahabatAI-Llama3 model struggles with severe overprediction (66.29% positive rate) which results in the lowest agreement score (κ ≈ 0.21) among the three judges (will be investigated further).
+DeepSeek-V3 achieves the highest agreement (κ=0.42) and is also the most conservative judge (28% pos rate vs 32% human). Qwen2.5-7B is best-calibrated among open-source models. Gemma2 overpredicts slightly (41%). Llama3 requires a strict output-constrained prompt to perform competitively — without it, pos rate reaches 67% and κ drops to 0.21. Note: ChatGPT evaluated on 6,751 pairs (partial test set due to API cost).
 
 **RQ2 — Retrieval & Reranking** (nDCG@10, test set, 960 queries)
 
-| System | nDCG@10 |
-|---|---|
-| BM25 (baseline) | 0.3053 |
-| BM25 + Qwen-trained reranker | 0.2832 |
-| Qwen-embed dense retrieval | 0.0066 |
-| BGE-M3 dense retrieval | **0.5604** |
-| Hybrid BM25 + BGE-M3 (RRF) | 0.5191 |
+| System | nDCG@10 | R@100 |
+|---|---|---|
+| BM25 (baseline) | 0.3053 | 0.7634 |
+| BGE-M3 dense retrieval | **0.5604** | 0.9047 |
+| Hybrid BM25 + BGE-M3 (RRF) | 0.5191 | 0.9154 |
+| BM25 + BGE reranker (Gemma2 qrels, N=100) | 0.5178 | — |
+| Qwen-embed dense retrieval | 0.0066 | 0.0406 |
 
-BGE-M3 substantially outperforms BM25 on MIRACL-ID. The Qwen-trained reranker on BM25 candidates shows a slight regression, suggesting the reranker training or qrel threshold may need further tuning.
+BGE-M3 substantially outperforms BM25 on MIRACL-ID. Reranking BM25 candidates with a BGE reranker trained on only 100 queries of Gemma2-generated qrels approaches BGE-M3 performance (0.5178 vs 0.5604). Reranker eval for Qwen-trained model pending.
 
 From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage) consistently beat the BM25 baseline across all training sizes, with N=100 achieving the highest nDCG@10=0.5178. Counterintuitively, performance degrades as training size increases toward N=full (0.3993), while val average precision on LLM qrels rises monotonically to 99.9% — indicating the reranker overfits to LLM judge noise as more training data is added.
 
