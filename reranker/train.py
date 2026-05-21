@@ -63,64 +63,97 @@ def main():
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    from sentence_transformers import CrossEncoder, InputExample
-    from torch.utils.data import DataLoader
+    import random
+    import torch
+    import torch.nn as nn
+    from torch.optim import AdamW
+    from torch.optim.lr_scheduler import LinearLR, SequentialLR, ConstantLR
+    from torch.utils.data import DataLoader as TorchDataLoader, TensorDataset
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+    from tqdm import tqdm
 
     print(f"Loading training data from {args.training_data}...")
     triplets = load_triplets(Path(args.training_data))
     print(f"  {len(triplets):,} triplets loaded")
 
-    # Expand triplets → paired examples (pos=1, neg=0)
-    train_examples = []
+    # Expand triplets → (text_a, text_b, label) pairs
+    pairs, labels_all = [], []
     for t in triplets:
-        train_examples.append(InputExample(texts=[t["query"], t["pos"]], label=1.0))
-        train_examples.append(InputExample(texts=[t["query"], t["neg"]], label=0.0))
+        pairs.append((t["query"], t["pos"])); labels_all.append(1.0)
+        pairs.append((t["query"], t["neg"])); labels_all.append(0.0)
 
-    # Apply max-steps limit for smoke test (cap training data)
+    # Apply max-steps limit for smoke test
     if args.max_steps > 0:
-        max_examples = args.max_steps * args.batch_size * 2
-        if len(train_examples) > max_examples:
-            train_examples = train_examples[:max_examples]
-            print(f"  Smoke test: capped to {len(train_examples)} examples "
-                  f"({args.max_steps} steps × batch {args.batch_size})")
+        cap = args.max_steps * args.batch_size * 2
+        pairs, labels_all = pairs[:cap], labels_all[:cap]
+        print(f"  Smoke test: capped to {len(pairs)} examples")
 
-    print(f"  Total training examples: {len(train_examples):,}")
+    combined = list(zip(pairs, labels_all))
+    random.seed(42)
+    random.shuffle(combined)
+    pairs, labels_all = [x[0] for x in combined], [x[1] for x in combined]
+    print(f"  Total training examples: {len(pairs):,}")
 
-    train_dataloader = DataLoader(
-        train_examples, shuffle=True, batch_size=args.batch_size
-    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\nLoading model: {args.model}  (device={device})")
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    model_hf = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=1)
+    model_hf = model_hf.to(device)
 
-    # Optional validation data
-    evaluator = None
-    if args.val_data:
-        from sentence_transformers.cross_encoder.evaluation import CEBinaryClassificationEvaluator
-        val_triplets = load_triplets(Path(args.val_data))
-        val_pairs = [(t["query"], t["pos"]) for t in val_triplets] + \
-                    [(t["query"], t["neg"]) for t in val_triplets]
-        val_labels = [1] * len(val_triplets) + [0] * len(val_triplets)
-        evaluator = CEBinaryClassificationEvaluator(val_pairs, val_labels,
-                                                     name="val", show_progress_bar=False)
-        print(f"  Validation: {len(val_triplets):,} triplets from {args.val_data}")
-
-    print(f"\nLoading model: {args.model}")
-    model = CrossEncoder(args.model, num_labels=1, max_length=512)
-
-    warmup_steps = min(100, max(1, len(train_dataloader) * args.epochs // 10))
+    total_steps = (len(pairs) // args.batch_size) * args.epochs
+    warmup_steps = min(100, max(1, total_steps // 10))
     print(f"Training: epochs={args.epochs}, batch={args.batch_size}, "
-          f"lr={args.lr}, warmup={warmup_steps}")
+          f"lr={args.lr}, warmup={warmup_steps}, total_steps={total_steps}")
 
-    model.fit(
-        train_dataloader=train_dataloader,
-        evaluator=evaluator,
-        epochs=args.epochs,
-        warmup_steps=warmup_steps,
-        optimizer_params={"lr": args.lr},
-        show_progress_bar=True,
-        output_path=str(output_dir),
-        save_best_model=evaluator is not None,
-    )
+    optimizer = AdamW(model_hf.parameters(), lr=args.lr, weight_decay=0.0)
+    warmup_scheduler = LinearLR(optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_steps)
+    decay_scheduler  = LinearLR(optimizer, start_factor=1.0, end_factor=0.0,
+                                 total_iters=max(1, total_steps - warmup_steps))
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, decay_scheduler],
+                              milestones=[warmup_steps])
+    loss_fn = nn.BCEWithLogitsLoss()
 
-    model.save(str(output_dir))
+    global_step = 0
+    for epoch in range(1, args.epochs + 1):
+        model_hf.train()
+        epoch_loss = 0.0
+        n_batches = 0
+        pbar = tqdm(range(0, len(pairs), args.batch_size),
+                    desc=f"Epoch {epoch}/{args.epochs}", unit="batch")
+        for i in pbar:
+            batch_pairs  = pairs[i:i + args.batch_size]
+            batch_labels = torch.tensor(labels_all[i:i + args.batch_size],
+                                        dtype=torch.float32, device=device)
+            enc = tokenizer(
+                [p[0] for p in batch_pairs],
+                [p[1] for p in batch_pairs],
+                padding=True, truncation=True, max_length=512,
+                return_tensors="pt",
+            ).to(device)
+
+            optimizer.zero_grad()
+            logits = model_hf(**enc).logits.squeeze(-1)
+            loss = loss_fn(logits, batch_labels)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model_hf.parameters(), 1.0)
+            optimizer.step()
+            scheduler.step()
+
+            epoch_loss += loss.item()
+            n_batches  += 1
+            global_step += 1
+            if global_step % 500 == 0:
+                pbar.set_postfix(loss=f"{epoch_loss / n_batches:.4f}", step=global_step)
+
+            if args.max_steps > 0 and global_step >= args.max_steps:
+                break
+
+        print(f"  Epoch {epoch}: avg_loss={epoch_loss / max(n_batches, 1):.4f}")
+        if args.max_steps > 0 and global_step >= args.max_steps:
+            break
+
+    model_hf.save_pretrained(str(output_dir))
+    tokenizer.save_pretrained(str(output_dir))
 
     meta = {
         "base_model": args.model,
@@ -129,7 +162,7 @@ def main():
         "lr": args.lr,
         "max_steps": args.max_steps,
         "n_triplets": len(triplets),
-        "n_train_examples": len(train_examples),
+        "n_train_examples": len(pairs),
         "training_data": str(args.training_data),
     }
     with open(output_dir / "training_meta.json", "w") as f:

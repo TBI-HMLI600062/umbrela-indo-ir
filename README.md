@@ -64,9 +64,10 @@ DeepSeek-V3 achieves the highest agreement (κ=0.42) and is also the most conser
 | BGE-M3 dense retrieval | **0.5604** | 0.9047 |
 | Hybrid BM25 + BGE-M3 (RRF) | 0.5191 | 0.9154 |
 | BM25 + BGE reranker (Gemma2 qrels, N=100) | 0.5178 | — |
+| BM25 + BGE reranker (Qwen2.5-7B qrels, full) | 0.4478 | — |
 | Qwen-embed dense retrieval | 0.0066 | 0.0406 |
 
-BGE-M3 substantially outperforms BM25 on MIRACL-ID. Reranking BM25 candidates with a BGE reranker trained on only 100 queries of Gemma2-generated qrels approaches BGE-M3 performance (0.5178 vs 0.5604). Reranker eval for Qwen-trained model pending.
+BGE-M3 substantially outperforms BM25 on MIRACL-ID. Reranking BM25 candidates with a BGE reranker trained on Gemma2-generated qrels (N=100) approaches BGE-M3 performance (0.5178 vs 0.5604). The Qwen-trained reranker (full, 53,727 triplets) achieves nDCG@10=0.4478, a +46% improvement over BM25 baseline, but lower than Gemma2 N=100 — consistent with Gemma2's higher positive rate generating more informative training signal despite the larger dataset.
 
 From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage) consistently beat the BM25 baseline across all training sizes, with N=100 achieving the highest nDCG@10=0.5178. Counterintuitively, performance degrades as training size increases toward N=full (0.3993), while val average precision on LLM qrels rises monotonically to 99.9% — indicating the reranker overfits to LLM judge noise as more training data is added.
 
