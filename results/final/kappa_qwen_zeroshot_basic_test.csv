@@ -1,0 +1,2 @@
+judge,kappa,n_pairs,llm_pos_rate,human_pos_rate
+qwen_zeroshot_basic_test,0.23932015648122373,9668,0.1265,0.3194

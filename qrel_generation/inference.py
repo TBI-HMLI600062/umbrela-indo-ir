@@ -52,7 +52,8 @@ def parse_args():
                         help="Provider for --judge-model (ignored with --judge).")
     parser.add_argument("--prompt-mode", default=None,
                         choices=["zeroshot_bing", "zeroshot_basic",
-                                 "fewshot_bing", "fewshot_basic"],
+                                 "fewshot_bing", "fewshot_basic",
+                                 "zeroshot_bing_strict"],
                         help="Prompt mode override (default: zeroshot_bing).")
     parser.add_argument("--split", choices=["train", "val", "test"],
                         help="Dataset split (required unless --list-judges).")
@@ -83,8 +84,9 @@ def resolve_judge_config(args):
         model_id = cfg["model"]
         provider = cfg["provider"]
         prompt_mode = args.prompt_mode or cfg.get("prompt_mode", "zeroshot_bing")
+        prompt_suffix = f"_{prompt_mode}" if prompt_mode != "zeroshot_bing" else ""
         output_path = Path(
-            args.output or f"results/qrels/{args.judge}_{args.split}.txt"
+            args.output or f"results/qrels/{args.judge}{prompt_suffix}_{args.split}.txt"
         )
     else:
         if not args.judge_model:

@@ -43,7 +43,8 @@ def parse_args():
                         help="Path to processed MIRACL-ID directory")
     parser.add_argument("--prompt-mode", default="zeroshot_bing",
                         choices=["zeroshot_bing", "zeroshot_basic",
-                                 "fewshot_bing", "fewshot_basic"])
+                                 "fewshot_bing", "fewshot_basic",
+                                 "zeroshot_bing_strict"])
     parser.add_argument("--token", default=None, help="HF token for private models")
     parser.add_argument("--batch-size", type=int, default=64,
                         help="Pairs per GPU forward pass (default: 64 for RTX 5090 32GB)")
