@@ -13,6 +13,11 @@ JUDGES: dict = {
         "model": "Qwen/Qwen2.5-7B-Instruct",
         "provider": "hf",
     },
+    "qwen-lora": {
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "provider": "hf",
+        "lora_path": "results/models/lora_qwen/",
+    },
     "sahabat-llama": {
         "model": "GoToCompany/llama3-8b-cpt-sahabatai-v1-instruct",
         "provider": "hf",

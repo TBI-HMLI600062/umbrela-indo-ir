@@ -50,6 +50,9 @@ def parse_args():
                         help="Pairs per GPU forward pass (default: 64 for RTX 5090 32GB)")
     parser.add_argument("--max-length", type=int, default=2048,
                         help="Max input token length with truncation (default: 2048)")
+    parser.add_argument("--lora-path", default=None,
+                        help="Path to LoRA adapter directory (optional). "
+                             "Adapter is merged into base weights before inference.")
     return parser.parse_args()
 
 
@@ -204,6 +207,14 @@ def main():
         dtype=torch.bfloat16,
         device_map="auto",
     )
+
+    if args.lora_path:
+        from peft import PeftModel
+        print(f"Loading LoRA adapter from: {args.lora_path}")
+        model = PeftModel.from_pretrained(model, args.lora_path)
+        model = model.merge_and_unload()
+        print("LoRA adapter merged into base weights")
+
     model.eval()
     print(f"Model loaded on: {next(model.parameters()).device}")
 
