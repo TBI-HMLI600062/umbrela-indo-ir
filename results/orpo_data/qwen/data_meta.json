@@ -1,0 +1,12 @@
+{
+  "human_qrels": "data/miracl-id/qrels/human/train.txt",
+  "prompt_mode": "zeroshot_bing",
+  "n_train": 46194,
+  "n_pos_raw": 9979,
+  "n_neg_raw": 23097,
+  "balanced": true,
+  "label_map": {
+    "rel=1": "chosen=3,rejected=0",
+    "rel=0": "chosen=0,rejected=3"
+  }
+}

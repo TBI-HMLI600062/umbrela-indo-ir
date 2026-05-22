@@ -1,5 +1,7 @@
 torch>=2.0
 transformers>=4.40
+peft>=0.10
+trl>=0.9,<1.0
 accelerate>=0.27
 datasets>=2.18,<3.0
 faiss-gpu>=1.7
