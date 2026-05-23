@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")"
 
 HUMAN_QRELS="data/miracl-id/qrels/human/test.txt"
-JUDGE="sahabat-gemma"
+JUDGE_MODEL="GoToCompany/gemma2-9b-cpt-sahabatai-v1-instruct"
 BATCH_SIZE=64
 N_QUERIES="${1:-}"  # optional: pass number like "100" for quick testing
 
@@ -17,10 +17,11 @@ for MODE in zeroshot_basic fewshot_bing fewshot_basic; do
     echo "========================================"
 
     OUT="results/qrels/sahabat-gemma_${MODE}_test.txt"
-    CMD="python qrel_generation/inference.py \
-        --judge $JUDGE \
+    CMD="python qrel_generation/inference_vllm.py \
+        --judge-model $JUDGE_MODEL \
         --split test \
         --prompt-mode $MODE \
+        --batch-size $BATCH_SIZE \
         --output $OUT"
     if [ -n "$N_QUERIES" ]; then
         CMD="$CMD --n-queries $N_QUERIES"
