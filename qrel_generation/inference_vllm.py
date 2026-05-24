@@ -22,6 +22,7 @@ Example:
 import sys
 import re
 import json
+import time
 import argparse
 from pathlib import Path
 from tqdm import tqdm
@@ -165,6 +166,7 @@ def main():
     print(f"Loading model: {args.judge_model}")
     tokenizer = AutoTokenizer.from_pretrained(args.judge_model)
 
+    t_load = time.time()
     llm = LLM(
         model=args.judge_model,
         dtype="bfloat16",
@@ -173,7 +175,7 @@ def main():
     )
     # max_tokens=1: prefix "##final score: " already added, model outputs just the digit
     sampling_params = SamplingParams(max_tokens=1, temperature=0.0)
-    print("vLLM engine ready.")
+    print(f"vLLM engine ready. (load+compile: {time.time()-t_load:.1f}s)")
 
     logs_path = output_path.parent / "logs" / output_path.name.replace(".txt", ".jsonl")
     errors_path = output_path.parent / "cuda_errors" / output_path.name
@@ -182,12 +184,21 @@ def main():
 
     total = len(remaining)
     chunk_size = args.batch_size  # flush interval for resume safety
+    t_infer_start = time.time()
+
+    print(f"\n{'='*60}")
+    print(f"  Model  : {args.judge_model.split('/')[-1]}")
+    print(f"  Mode   : {args.prompt_mode}")
+    print(f"  Split  : {args.split}  |  Pairs: {total}")
+    print(f"  Output : {output_path}")
+    print(f"{'='*60}\n")
 
     with open(output_path, "a") as out_f, \
          open(logs_path, "a") as log_f, \
          open(errors_path, "a") as err_f:
 
-        pbar = tqdm(total=total, desc="Judging")
+        pbar = tqdm(total=total, desc="Judging", unit="pairs",
+                    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]")
 
         for chunk_start in range(0, total, chunk_size):
             chunk = remaining[chunk_start:chunk_start + chunk_size]
@@ -237,9 +248,21 @@ def main():
             log_f.flush()
             pbar.update(len(valid))
 
+            # verbose chunk summary
+            done = chunk_start + len(chunk)
+            elapsed = time.time() - t_infer_start
+            rate = done / elapsed if elapsed > 0 else 0
+            eta = (total - done) / rate if rate > 0 else 0
+            print(f"  [chunk] {done}/{total} pairs | "
+                  f"{rate:.1f} pairs/s | ETA {eta/60:.1f} min", flush=True)
+
         pbar.close()
 
-    print(f"\nDone. Results written to {output_path}")
+    elapsed_total = time.time() - t_infer_start
+    print(f"\n{'='*60}")
+    print(f"  DONE: {total} pairs in {elapsed_total/60:.1f} min  ({total/elapsed_total:.1f} pairs/s)")
+    print(f"  Results → {output_path}")
+    print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":
