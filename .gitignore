@@ -5,6 +5,9 @@ embeddings/
 results/qrels/
 results/reranker/
 results/reranker_data/
+results/lora/
+data/lora/
+unsloth_compiled_cache/
 log_*.txt
 nohup.out
 *.bin
