@@ -17,11 +17,15 @@ for MODE in zeroshot_basic fewshot_bing fewshot_basic; do
     echo "========================================"
 
     OUT="results/qrels/sahabat-gemma_vllm_${MODE}_test.txt"
+    # fewshot prompts are longer — use 4096 max-length
+    MAX_LEN=2048
+    [[ "$MODE" == fewshot* ]] && MAX_LEN=4096
     CMD="python qrel_generation/inference_vllm.py \
         --judge-model $JUDGE_MODEL \
         --split test \
         --prompt-mode $MODE \
         --batch-size $BATCH_SIZE \
+        --max-length $MAX_LEN \
         --output $OUT"
     if [ -n "$N_QUERIES" ]; then
         CMD="$CMD --n-queries $N_QUERIES"
