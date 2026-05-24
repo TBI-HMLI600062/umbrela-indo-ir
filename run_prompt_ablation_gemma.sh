@@ -16,7 +16,7 @@ for MODE in zeroshot_basic fewshot_bing fewshot_basic; do
     echo "  Prompt mode: $MODE"
     echo "========================================"
 
-    OUT="results/qrels/sahabat-gemma_${MODE}_test.txt"
+    OUT="results/qrels/sahabat-gemma_vllm_${MODE}_test.txt"
     CMD="python qrel_generation/inference_vllm.py \
         --judge-model $JUDGE_MODEL \
         --split test \
@@ -34,7 +34,7 @@ for MODE in zeroshot_basic fewshot_bing fewshot_basic; do
     python evaluation/metrics.py \
         --llm-qrels "$OUT" \
         --human-qrels "$HUMAN_QRELS" \
-        --output "results/final/kappa_gemma_${MODE}_test.csv"
+        --output "results/final/kappa_gemma_vllm_${MODE}_test.csv"
 done
 
 echo ""
