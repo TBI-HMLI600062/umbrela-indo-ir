@@ -13,7 +13,7 @@ Args:
     --data-dir      path to processed MIRACL-ID directory (default: data/miracl-id/)
     --prompt-mode   zeroshot_bing | zeroshot_basic | fewshot_bing | fewshot_basic
     --token         HuggingFace token for private models (optional)
-    --batch-size    pairs per forward pass (default: 64 for RTX 5090 32GB)
+    --batch-size    pairs per forward pass (default: 64 for 32GB+ VRAM)
     --max-length    max input token length (default: 2048)
 
 Example:
@@ -47,7 +47,7 @@ def parse_args():
                                  "zeroshot_bing_strict"])
     parser.add_argument("--token", default=None, help="HF token for private models")
     parser.add_argument("--batch-size", type=int, default=64,
-                        help="Pairs per GPU forward pass (default: 64 for RTX 5090 32GB)")
+                        help="Pairs per GPU forward pass (default: 64 for 32GB+ VRAM)")
     parser.add_argument("--max-length", type=int, default=2048,
                         help="Max input token length with truncation (default: 2048)")
     return parser.parse_args()
@@ -203,6 +203,7 @@ def main():
         args.judge_model,
         dtype=torch.bfloat16,
         device_map="auto",
+        attn_implementation="sdpa",
     )
     model.eval()
     print(f"Model loaded on: {next(model.parameters()).device}")
@@ -252,7 +253,7 @@ def main():
             try:
                 generated_texts = run_batch(
                     model, tokenizer, prompts,
-                    max_new_tokens=100,
+                    max_new_tokens=30,
                     max_length=args.max_length,
                 )
             except torch.cuda.OutOfMemoryError:
@@ -260,8 +261,8 @@ def main():
                 # Retry with half-batch
                 mid = len(prompts) // 2
                 try:
-                    g1 = run_batch(model, tokenizer, prompts[:mid], 100, args.max_length)
-                    g2 = run_batch(model, tokenizer, prompts[mid:], 100, args.max_length)
+                    g1 = run_batch(model, tokenizer, prompts[:mid], 30, args.max_length)
+                    g2 = run_batch(model, tokenizer, prompts[mid:], 30, args.max_length)
                     generated_texts = g1 + g2
                 except Exception as e2:
                     for qid, docid, _ in valid:
