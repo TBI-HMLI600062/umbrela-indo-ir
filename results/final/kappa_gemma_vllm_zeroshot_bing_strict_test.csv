@@ -1,0 +1,2 @@
+judge,kappa,n_pairs,llm_pos_rate,human_pos_rate
+sahabat-gemma_vllm_zeroshot_bing_strict_test,0.3753289641851112,9668,0.4529,0.3194

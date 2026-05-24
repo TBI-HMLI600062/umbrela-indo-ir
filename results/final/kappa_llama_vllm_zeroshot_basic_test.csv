@@ -1,0 +1,2 @@
+judge,kappa,n_pairs,llm_pos_rate,human_pos_rate
+sahabat-llama_vllm_zeroshot_basic_test,0.3038624311450039,9668,0.5806,0.3194
