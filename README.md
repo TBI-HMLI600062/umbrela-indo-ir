@@ -79,6 +79,16 @@ From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage
 | 1000 | 18,509 | 0.4072 | 0.2993 | 0.916 |
 | full | 60,750 | 0.3993 | 0.2917 | 1.000 |
 
+From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage) consistently beat the BM25 baseline across all training sizes, with N=100 achieving the highest nDCG@10=0.5178. Counterintuitively, performance degrades as training size increases toward N=full (0.3993), while val average precision on LLM qrels rises monotonically to 99.9% — indicating the reranker overfits to LLM judge noise as more training data is added.
+
+| N (queries) | n_triplets | nDCG@10 | MAP@10 | Val AP (LLM) |
+|---|---|---|---|---|
+| 100 | 1,937 | **0.5178** | 0.4088 | 0.865 |
+| 300 | 5,285 | 0.4620 | 0.3491 | 0.873 |
+| 500 | 9,173 | 0.5011 | 0.3950 | 0.905 |
+| 1000 | 18,509 | 0.4072 | 0.2993 | 0.916 |
+| full | 60,750 | 0.3993 | 0.2917 | 1.000 |
+
 **RQ3 — Bias Analysis**: pending (Karol)
 
 ---
