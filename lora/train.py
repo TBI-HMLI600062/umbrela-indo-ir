@@ -113,37 +113,21 @@ def load_examples(data_dir: Path, filename: str = "train.jsonl") -> list:
         return [json.loads(line) for line in f]
 
 
-def build_dataset(examples: list, tokenizer):
-    """Render each {prompt, response} example to a single chat-formatted `text`
-    field. The collator masks the prompt later, so we keep both turns here."""
+def build_dataset(examples: list):
+    """Emit TRL prompt-completion conversational format: separate `prompt` and
+    `completion` message lists. SFTTrainer applies the chat template itself and,
+    because the dataset is prompt-completion, defaults completion_only_loss=True —
+    it builds a completion_mask that zeroes the prompt tokens, so loss lands on
+    the assistant response only (same intent as the old collator masking)."""
     from datasets import Dataset
 
     def render(ex):
-        messages = [
-            {"role": "user", "content": ex["prompt"]},
-            {"role": "assistant", "content": ex["response"]},
-        ]
-        text = tokenizer.apply_chat_template(messages, tokenize=False)
-        return {"text": text}
+        return {
+            "prompt": [{"role": "user", "content": ex["prompt"]}],
+            "completion": [{"role": "assistant", "content": ex["response"]}],
+        }
 
     return Dataset.from_list([render(ex) for ex in examples])
-
-
-def assistant_response_template(tokenizer) -> str:
-    """The marker that precedes the assistant's reply (e.g. '<|im_start|>assistant\\n'
-    for Qwen). Everything before it is masked out of the loss. Derived from the
-    tokenizer's own chat template so it stays correct across base models."""
-    with_gen = tokenizer.apply_chat_template(
-        [{"role": "user", "content": ""}], tokenize=False, add_generation_prompt=True
-    )
-    without_gen = tokenizer.apply_chat_template(
-        [{"role": "user", "content": ""}], tokenize=False, add_generation_prompt=False
-    )
-    template = with_gen[len(without_gen):]
-    if not template.strip():
-        # Fallback for templates that don't grow under add_generation_prompt.
-        template = "<|im_start|>assistant\n"
-    return template
 
 
 def filter_supported(target, kwargs: dict) -> dict:
@@ -160,7 +144,7 @@ def main():
 
     import torch
     from unsloth import FastLanguageModel
-    from trl import SFTTrainer, SFTConfig, DataCollatorForCompletionOnlyLM
+    from trl import SFTTrainer, SFTConfig
 
     # ── Model (Unsloth) ──────────────────────────────────────────────────────────
     print(f"Loading model: {args.model}  (4bit={not args.no_4bit})")
@@ -195,19 +179,13 @@ def main():
         train_examples = train_examples[:cap]
         print(f"  Smoke test: capped to {len(train_examples)} examples")
     print(f"  {len(train_examples):,} train examples")
-    train_ds = build_dataset(train_examples, tokenizer)
+    train_ds = build_dataset(train_examples)
 
     eval_ds = None
     if args.val_data:
         val_examples = load_examples(Path(args.val_data), filename="val.jsonl")
         print(f"  {len(val_examples):,} val examples")
-        eval_ds = build_dataset(val_examples, tokenizer)
-
-    # Mask everything before the assistant response → loss on the answer only.
-    collator = DataCollatorForCompletionOnlyLM(
-        response_template=assistant_response_template(tokenizer),
-        tokenizer=tokenizer,
-    )
+        eval_ds = build_dataset(val_examples)
 
     # ── Trainer config ───────────────────────────────────────────────────────────
     has_val = eval_ds is not None
@@ -258,7 +236,8 @@ def main():
         # filter_supported() keeps whichever the installed version accepts.
         max_seq_length=args.max_length,
         max_length=args.max_length,
-        dataset_text_field="text",
+        # Dataset is prompt-completion → completion_only_loss defaults to True,
+        # masking the prompt. No dataset_text_field / collator needed.
         packing=False,
     )
     sft_config = SFTConfig(**filter_supported(SFTConfig, cfg_kwargs))
@@ -268,7 +247,6 @@ def main():
         args=sft_config,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        data_collator=collator,
         processing_class=tokenizer,   # renamed from `tokenizer` in newer TRL
         tokenizer=tokenizer,
     ))
