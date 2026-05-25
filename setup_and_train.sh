@@ -86,7 +86,7 @@ fi
 
 UPLOAD_FLAG=""
 if [ -n "$HF_REPO" ]; then
-    UPLOAD_FLAG="--hf-repo $HF_REPO"
+    UPLOAD_FLAG="--push-to-hub --hub-model-id $HF_REPO"
 fi
 
 python lora/train.py \
