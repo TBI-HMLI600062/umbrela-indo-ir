@@ -33,10 +33,10 @@ from tqdm import tqdm
 
 
 _FIRST_STAGE_FILES = {
-    "bm25":        "bm25_top100.jsonl",
-    "bge_m3":      "bgem3_top100.jsonl",
-    "hybrid":      "hybrid_top100.jsonl",
-    "qwen_embed":  "qwen_top100.jsonl",
+    "bm25":        "bm25_test_top100.jsonl",
+    "bge_m3":      "bgem3_test_top100.jsonl",
+    "hybrid":      "hybrid_test_top100.jsonl",
+    "qwen_embed":  "qwen_test_top100.jsonl",
     "qwen3_embed": "qwen3_test_top100.jsonl",
 }
 

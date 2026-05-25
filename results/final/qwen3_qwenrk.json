@@ -1,0 +1,7 @@
+{
+  "ndcg@10": 0.4585,
+  "map@10": 0.3504,
+  "recall@100": 0.8508,
+  "first_stage": "qwen3_embed",
+  "reranker": "umbrela-indo-ir-reranker-qwen"
+}
