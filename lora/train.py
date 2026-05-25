@@ -94,6 +94,8 @@ def parse_args():
                         help="HF repo ID for --push-to-hub")
     parser.add_argument("--hub-public", action="store_true",
                         help="Make HF repo public (default: private)")
+    parser.add_argument("--no-4bit", action="store_true",
+                        help="Disable 4-bit quantization (full bfloat16 LoRA, uses more VRAM)")
     return parser.parse_args()
 
 
@@ -201,8 +203,8 @@ def main():
     from torch.optim import AdamW
     from torch.optim.lr_scheduler import LinearLR, SequentialLR
     from torch.utils.data import Dataset, DataLoader
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-    from peft import LoraConfig, get_peft_model, PeftModel, TaskType
+    from unsloth import FastLanguageModel
+    from peft import PeftModel
     from tqdm import tqdm
 
     random.seed(42)
@@ -243,35 +245,30 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nLoading model: {args.model}  (device={device})")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    tokenizer.padding_side = "right"
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    base_model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
+    base_model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=args.model,
+        max_seq_length=args.max_length,
+        dtype=None,        # auto-detect bfloat16/float16
+        load_in_4bit=not args.no_4bit,
     )
+    tokenizer.padding_side = "right"
 
     if resume_ckpt_path is not None:
         print(f"Loading LoRA adapter from {resume_ckpt_path.name}...")
         model = PeftModel.from_pretrained(base_model, str(resume_ckpt_path), is_trainable=True)
     else:
-        lora_cfg = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
+        model = FastLanguageModel.get_peft_model(
+            base_model,
             r=args.lora_r,
             lora_alpha=args.lora_alpha,
-            lora_dropout=0.05,
+            lora_dropout=0,
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                             "gate_proj", "up_proj", "down_proj"],
             bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=42,
         )
-        model = get_peft_model(base_model, lora_cfg)
 
-    # Gradient checkpointing saves ~10GB VRAM at ~30% compute overhead.
-    model.gradient_checkpointing_enable()
-    model.enable_input_require_grads()
     model.print_trainable_parameters()
 
     # ── Tokenize ─────────────────────────────────────────────────────────────────
@@ -475,8 +472,10 @@ def main():
                 train_log_f.write(json.dumps(log_entry) + "\n")
                 train_log_f.flush()
 
-                if global_step % 50 == 0:
-                    pbar.set_postfix(loss=f"{step_loss:.4f}", step=global_step)
+                mem_gb = torch.cuda.memory_allocated() / 1e9 if torch.cuda.is_available() else 0
+                print(f"  step={global_step:4d}  loss={step_loss:.4f}  "
+                      f"lr={current_lr:.2e}  vram={mem_gb:.1f}GB")
+                pbar.set_postfix(loss=f"{step_loss:.4f}", step=global_step)
 
                 if args.max_steps > 0 and global_step >= args.max_steps:
                     break
