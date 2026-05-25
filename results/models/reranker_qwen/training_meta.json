@@ -1,0 +1,10 @@
+{
+  "base_model": "BAAI/bge-reranker-v2-m3",
+  "epochs": 3,
+  "batch_size": 16,
+  "lr": 2e-05,
+  "max_steps": 0,
+  "n_triplets": 53727,
+  "n_train_examples": 107454,
+  "training_data": "results/reranker_data/qwen/"
+}

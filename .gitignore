@@ -1,7 +1,7 @@
 # --- MIRACL-ID data & model artifacts (large files, not tracked) ---
 data/miracl-id/
 embeddings/
-candidates/
+# candidates/ — tracked in repo (small JSONL, ~5-7 MB each)
 results/qrels/
 results/reranker/
 results/reranker_data/

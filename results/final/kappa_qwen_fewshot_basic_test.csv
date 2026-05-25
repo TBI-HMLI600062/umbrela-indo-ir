@@ -1,0 +1,2 @@
+judge,kappa,n_pairs,llm_pos_rate,human_pos_rate
+qwen_fewshot_basic_test,0.22538850762307583,9668,0.1146,0.3194

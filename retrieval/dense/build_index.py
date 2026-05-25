@@ -67,12 +67,16 @@ def download_from_hf(hf_repo: str, hf_folder: str, local_dir: Path):
     """Download all embeddings_chunk_* and docids_chunk_* files from HF."""
     from huggingface_hub import HfApi, hf_hub_download
 
-    os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+    os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
     try:
-        import hf_transfer  # noqa: F401
-        print("hf_transfer active — fast parallel download")
+        import hf_xet  # noqa: F401
+        print("hf_xet active — fast parallel download")
     except ImportError:
-        print("tip: pip install hf_transfer for faster downloads")
+        try:
+            import hf_transfer  # noqa: F401
+            print("hf_transfer active — fast parallel download")
+        except ImportError:
+            print("tip: pip install hf-xet for faster downloads")
 
     hf_token = os.environ.get("HF_TOKEN")
     api = HfApi(token=hf_token)

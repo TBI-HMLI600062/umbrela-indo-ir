@@ -1,0 +1,10 @@
+{
+  "base_model": "BAAI/bge-reranker-v2-m3",
+  "epochs": 3,
+  "batch_size": 16,
+  "lr": 2e-05,
+  "max_steps": 0,
+  "n_triplets": 60750,
+  "n_train_examples": 121500,
+  "training_data": "results/training/triplets_full/"
+}

@@ -1,0 +1,45 @@
+epic_id,epic_name,task_id,task_name,task_detail,type,status,owner,notes
+0,Data Setup,E0T1,Download MIRACL-ID,Download corpus + train + dev splits dari HuggingFace MIRACL dataset,setup,done,Faiz,~1.44M passages corpus + query splits
+0,Data Setup,E0T2,Split train/val/test,80/20 split dari MIRACL train set; seed=42; train=3257 val=814 test=960 queries,setup,done,Faiz,Test = MIRACL dev set (ada human qrels)
+0,Data Setup,E0T3,Upload ke HuggingFace,Upload semua data ke fassabilf/umbrela-indo-ir dataset repo,setup,done,Faiz,Biar semua anggota tim bisa akses
+1,LLM Judge Inference,E1T1,Qwen2.5-7B qrel generation,Generate qrels untuk semua split (test=9668 train=33076 val=8282 pairs) pakai prompt zeroshot_bing,experiment,done,Faiz,Bug fixed: filter None dari terminator tokens supaya kappa tidak NaN
+1,LLM Judge Inference,E1T2,SahabatAI-Gemma2-9B qrel generation,Generate qrels untuk semua split; model Indonesian-specific,experiment,done,Radit,Pos rate 41.23% (lebih tinggi dari human 31.94%)
+1,LLM Judge Inference,E1T3,SahabatAI-Llama3-8B qrel generation,Generate qrels; test selesai (9668); train baru 16829/33076,experiment,in-progress,Vincent,Default prompt pos rate 67% (kappa 0.21); butuh strict prompt untuk hasil wajar
+1,LLM Judge Inference,E1T4,DeepSeek-V3 qrel generation,Generate qrels untuk test split (9668 pairs) via API,experiment,done,Vincent,Best judge: kappa=0.4219; paling konservatif (pos rate 27.99%)
+1,LLM Judge Inference,E1T5,ChatGPT gpt-4o-mini qrel generation,Generate qrels via OpenAI API; partial 6751 pairs dari 9668,experiment,done,Vincent,kappa=0.3856; API-based jadi paling mahal
+2,Kappa Analysis (RQ1),E2T1,Compute kappa per judge,Binarize LLM scores (score>=2 = relevant) lalu compute Cohen's kappa vs human qrels,analysis,done,Faiz,test: Qwen=0.3767 Gemma2=0.3763 Llama3=0.3652 DeepSeek=0.4219 GPT=0.3856
+2,Kappa Analysis (RQ1),E2T2,Compile kappa comparison table,Tabel semua judge + kappa + pos rate + n_pairs,analysis,done,Faiz,results/final/kappa*.csv
+2,Kappa Analysis (RQ1),E2T3,Analisis positivity rate per judge,Bandingkan pos rate LLM (28%-67%) vs human (31.94%); insight kalibrasi judge,analysis,done,Faiz,Range lebar: Llama3 default 66.66% vs DeepSeek 27.99%
+3,First-Stage Retrieval,E3T1,BM25 top-100 all splits,BM25 pakai bm25s library (Java-free); k1=1.5 b=0.75; top-100 per query,experiment,done,Arvin,candidates/bm25_{train,val,test}_top100.jsonl
+3,First-Stage Retrieval,E3T2,BGE-M3 dense retrieval top-100,FAISS IndexFlatIP; multilingual embeddings; top-100 per query,experiment,done,Arvin,candidates/bgem3_{train,val,test}_top100.jsonl; nDCG@10=0.5604 (test)
+3,First-Stage Retrieval,E3T3,Hybrid RRF fusion,Reciprocal Rank Fusion dari BM25 + BGE-M3 results,experiment,done,Arvin,nDCG@10=0.5191 (test)
+3,First-Stage Retrieval,E3T4,Eval baseline semua retriever,Compute nDCG@10 MAP@10 Recall@100 untuk semua first-stage systems,analysis,done,Arvin,BM25=0.3053 BGE-M3=0.5604 Hybrid=0.5191
+4,Qwen Corpus Encoding,E4T1,Encode 1.44M passages pakai Qwen,Qwen2.5-7B last-token pooling + L2 normalize; chunked batch untuk memory,experiment,done,Karol,~20.8 GB total; 5 FAISS shards
+4,Qwen Corpus Encoding,E4T2,Upload ke HuggingFace (5 shard),Upload FAISS shards ke HF untuk akses tim; branch feat/e5-t2-qwen-corpus-encoding,setup,done,Karol,Query encode harus exact match: last-token pool + left-pad + L2 norm
+4,Qwen Corpus Encoding,E4T3,Integrasi ke eval pipeline,Load 5 shard + concat + encode query dengan cara sama → generate candidates JSONL,setup,pending,Karol,Blocking untuk RQ3 (EPIC 6); Qwen-embed candidates belum ada
+5,Reranker Training + Eval (RQ2),E5T1,Triplet generation dari Qwen qrels,53727 triplets dari 2866 queries; max 50 triplets/query; hard negatives dari Qwen-embed,setup,done,Faiz,reranker/prepare_data.py; hard neg = ranked tinggi tapi LLM label rel=0
+5,Reranker Training + Eval (RQ2),E5T2,Triplet generation dari Gemma2 qrels,Triplets dari Gemma2 qrels untuk size ablation,setup,done,Radit,Dipakai untuk N=100/300/500/1000/full experiments
+5,Reranker Training + Eval (RQ2),E5T3,Train BGE reranker on Qwen qrels,Fine-tune BAAI/bge-reranker-v2-m3; BCEWithLogitsLoss; AdamW lr=2e-5; 3 epochs RTX 4090 ~1.8h,experiment,done,Faiz,Loss: 0.49→0.27→0.10→0.029; model di fassabilf/umbrela-indo-ir-reranker-qwen
+5,Reranker Training + Eval (RQ2),E5T4,Size ablation reranker Gemma2,Train 5 reranker dengan N=100/300/500/1000/full training queries; compare nDCG@10,experiment,done,Radit,Best N=100 (1937 triplets) → nDCG@10=0.5178; overfitting ke LLM noise di N besar
+5,Reranker Training + Eval (RQ2),E5T5,Eval BM25 + Qwen reranker,Score BM25 top-100 pakai Qwen-trained reranker; eval vs human qrels,analysis,done,Faiz,nDCG@10=0.4478 MAP@10=0.3470 Recall@100=0.7634 (+46% vs BM25)
+5,Reranker Training + Eval (RQ2),E5T6,Eval BM25 + Gemma2 reranker per size,Eval semua 5 model dari size ablation,analysis,done,Radit,N=100→0.5178; N=300→0.4620; N=500→0.5011; N=1000→0.4072; full→0.3993
+5,Reranker Training + Eval (RQ2),E5T7,Plot learning curve,Plot nDCG@10 vs training size N dengan baseline overlays,analysis,done,Radit,results/final/learning_curve.png
+5,Reranker Training + Eval (RQ2),E5T8,Plot dual-axis ablation,Dual-axis plot: Val AP (LLM qrels) vs nDCG@10 (human qrels) per N,analysis,done,Radit,results/final/ap_vs_ndcg_curve.png; visualisasi overfitting ke LLM noise
+5,Reranker Training + Eval (RQ2),E5T9,Upload model ke HuggingFace,Upload fine-tuned reranker ke HF model repo,setup,done,Faiz,fassabilf/umbrela-indo-ir-reranker-qwen
+6,Bias Analysis (RQ3),E6T1,Rancang experiment matrix,Design matrix 2x2: (retriever: Qwen-embed vs BGE-M3) x (reranker: Qwen-rk vs Gemma2-rk),analysis,pending,Karol,Goal: detect self-reinforcing bias dari judge/retriever choice
+6,Bias Analysis (RQ3),E6T2,Implement bias_analysis.py,Code evaluation matrix + delta nDCG@10 computation,analysis,pending,Karol,evaluation/bias_analysis.py sekarang masih TODO stub kosong; blocking
+6,Bias Analysis (RQ3),E6T3,Run eval matrix,Jalankan eval semua 4 kombinasi retriever x reranker,experiment,pending,Karol,Butuh E4T3 selesai dulu (Qwen-embed candidates)
+6,Bias Analysis (RQ3),E6T4,Analisis delta nDCG@10,Apakah Qwen reranker perform lebih baik di atas Qwen-embed retrieval? Quantify bias.,analysis,pending,Karol,-
+7,Prompt Ablation,E7T1,Eval zeroshot_bing vs zeroshot_basic,Run inference Qwen + Gemma2 dengan prompt zeroshot_basic; compute kappa; compare vs zeroshot_bing,experiment,pending,-,prompts/qrel_zeroshot_basic.txt vs qrel_zeroshot_bing.txt
+7,Prompt Ablation,E7T2,Eval fewshot_bing vs fewshot_basic,Run inference dengan semua fewshot variants; compute kappa,experiment,pending,-,prompts/qrel_fewshot_bing.txt + qrel_fewshot_basic.txt; butuh GPU compute
+7,Prompt Ablation,E7T3,Analisis strict prompt Llama3,Investigasi kenapa default prompt Llama3 pos rate 67% sedangkan strict hanya 39%,analysis,pending,Vincent,Diff: format constraint di output? Model bias ke positive?
+7,Prompt Ablation,E7T4,Compile prompt ablation table,Tabel kappa per judge x prompt_mode,analysis,pending,-,Input untuk EPIC 8: pilih prompt terbaik sebelum LoRA
+8,LoRA Fine-tuning LLM Judge,E8T1,Rancang LoRA setup,Pilih prompt terbaik dari EPIC 7; tentukan target layer LoRA; data split untuk fine-tuning,setup,pending,-,Depends on: E7T4 selesai; pakai human qrels sebagai training signal
+8,LoRA Fine-tuning LLM Judge,E8T2,Fine-tune Qwen2.5-7B dengan LoRA,LoRA fine-tuning pada Qwen judge menggunakan human-labeled pairs; eval kappa,experiment,pending,-,Baseline: Qwen zeroshot kappa=0.3767
+8,LoRA Fine-tuning LLM Judge,E8T3,Fine-tune SahabatAI dengan LoRA,LoRA fine-tuning pada Gemma2 atau Llama3 dengan setup sama,experiment,pending,-,Comparison: apakah Indonesian-specific model lebih improve dari LoRA?
+8,LoRA Fine-tuning LLM Judge,E8T4,Eval kappa LoRA-tuned vs baseline,Bandingkan delta kappa dari LoRA: Qwen-LoRA vs SahabatAI-LoRA,analysis,pending,-,-
+8,LoRA Fine-tuning LLM Judge,E8T5,Compare efficiency LoRA vs API judge,LoRA open-source (biaya GPU) vs DeepSeek-V3/GPT (biaya API); kappa per dollar,analysis,pending,-,DeepSeek-V3 kappa=0.4219; bisa LoRA open-source match ini?
+9,Paper / Laporan Akhir,E9T1,Tulis section RQ1,Narasi judge comparison; kappa table; analisis pos rate,analysis,pending,All,Depends: semua judge inference selesai (E1T3 masih in-progress)
+9,Paper / Laporan Akhir,E9T2,Tulis section RQ2,Narasi reranker training + size ablation insight (overfitting ke LLM noise),analysis,pending,All,Hasil sudah ada semua; bisa dimulai
+9,Paper / Laporan Akhir,E9T3,Tulis section RQ3,Narasi bias analysis + interpretasi delta nDCG@10,analysis,pending,Karol,Blocking: E6T4 harus selesai dulu
+9,Paper / Laporan Akhir,E9T4,Compile final result tables,Satu tabel besar: semua judges x semua retriever x semua reranker,analysis,pending,All,-

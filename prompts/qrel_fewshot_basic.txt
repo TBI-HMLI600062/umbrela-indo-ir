@@ -3,7 +3,21 @@ Here, "0" represent that the passage has nothing to do with the query, "1" repre
 
 Following are some of the examples of relevance categorizations for different categories:
 
-{examples}
+query: anthropological definition of environment
+passage: Abiotic factors are all of the non-living things in an environment. All biotic factors in an environment are dependent upon the abiotic factors in an environment. Some examples of biotic factors in the tropical rainforest are toucans, frogs, snakes, and lizards. Abiotic factors in the tropical rainforest include humidity, soil composition, temperature, and sunlight.
+Category: 0
+
+query: anthropological definition of environment
+passage: Definition of Environment. Environment: The sum of the total of the elements, factors and conditions in the surroundings which may have an impact on the development, action or survival of an organism or group of organisms. Search MedTerms:
+Category: 1
+
+query: anthropological definition of environment
+passage: Graduate Study in Anthropology. The graduate program in biological anthropology at CU Boulder offers training in several areas, including primatology, human biology, and paleoanthropology. We share an interest in human ecology, the broad integrative area of anthropology that focuses on the interactions of culture, biology and the environment.
+Category: 2
+
+query: anthropological definition of environment
+passage: Archaeology, which studies past human cultures through investigation of physical evidence, is thought of as a branch of anthropology in the United States. Environmental anthropology is a sub-specialty within the field of anthropology that takes an active role in examining the relationships between humans and their environment across space and time.
+Category: 3
 
 Provide explanation for the relevance and give your answer with from one of the categories 0, 1, 2 or 3 only. One of the categorical values if compulsory in answer.
 

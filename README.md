@@ -8,6 +8,91 @@ and analyze self-reinforcing bias (RQ3).
 
 ---
 
+## Progress Report
+
+> Last updated: 2026-05-17
+
+### Base Paper
+
+This project extends **UMBRELA** — an LLM-as-Judge framework for automatic relevance assessment — to the Indonesian language domain. The original paper:
+
+> Naghmeh Farzi and Laura Dietz. *UMBRELA: UMbrela is the Replacement for BERT-based Relevance LAbeling.* SIGIR 2025.
+
+Our extension uses the **MIRACL-ID** dataset (~1.44M Indonesian Wikipedia passages, 960 test queries with human qrels) to evaluate three research questions: (RQ1) which LLM judge best aligns with human relevance judgments in Indonesian, (RQ2) whether LLM-generated qrels can train a reranker that improves over BM25, and (RQ3) whether judge choice introduces self-reinforcing bias.
+
+---
+
+### Team Contributions
+
+**Faiz — Qwen2.5-7B-Instruct Judge + Reranker Training**
+Implemented the full end-to-end pipeline: LLM judge inference, Cohen's kappa evaluation against human qrels, reranker training (triplet preparation → CrossEncoder fine-tuning → TREC-format inference → nDCG@10 evaluation). Full qrel generation across all 51k query-document pairs completed.
+
+**Radit — SahabatAI-Gemma2 Judge + Size Ablation (RQ2)**
+Qrel generation completed for all splits: test (9,668 pairs), train (33,076 pairs), val (8,282 pairs). Cohen's kappa computed for all three splits. Size ablation (RQ2) fully completed: BGE reranker fine-tuned on 5 training subsets (N=100, 300, 500, 1000, full) using Gemma2-generated qrels, evaluated on test set with BM25 first-stage. Learning curve and divergence analysis (AP vs nDCG) generated.
+
+**Vincent — SahabatAI-Llama3 Judge**
+Inference on the test split (9,668 pairs) is completed using an unquantized model hosted on vast.ai. Full inference run on the train split is currently underway with 16,829 out of 33,076 pairs processed. Scripts are updated to ensure full precision model loading and bypass previous memory constraints.
+
+**Arvin — First-Stage Retrieval**
+Implemented BM25 (bm25s, no Java dependency), BGE-M3 dense retrieval with FAISS, and hybrid RRF fusion. Generated top-100 candidate files for all splits (train/val/test). Retrieval scores evaluated and added to results table.
+
+**Karol — Corpus Encoding + Bias Analysis (RQ3)**
+Qwen2.5-7B corpus encoding completed in chunked batches (~20.8 GB total, 5 FAISS shards, uploaded to HuggingFace). RQ3 bias analysis implementation in progress.
+
+---
+
+### Preliminary Results
+
+**RQ1 — Judge Agreement** (Cohen's κ vs. human qrels, test set)
+
+| Judge Model | κ | LLM pos. rate | Human pos. rate | n_pairs |
+|---|---|---|---|---|
+| DeepSeek-V3 | **0.4219** | 27.99% | 31.94% | 9,668 |
+| Qwen2.5-7B-Instruct | 0.3767 | 30.74% | 31.94% | 9,668 |
+| ChatGPT (gpt-4o-mini) | 0.3856 | 26.38% | 32.96% | 6,751 |
+| SahabatAI-Gemma2-9B | 0.3763 | 41.23% | 31.94% | 9,668 |
+| SahabatAI-Llama3-8B (strict prompt) | 0.3652 | 38.79% | 31.94% | 9,668 |
+| SahabatAI-Llama3-8B (default prompt) | 0.2103 | 66.66% | 31.94% | 9,668 |
+
+DeepSeek-V3 achieves the highest agreement (κ=0.42) and is also the most conservative judge (28% pos rate vs 32% human). Qwen2.5-7B is best-calibrated among open-source models. Gemma2 overpredicts slightly (41%). Llama3 requires a strict output-constrained prompt to perform competitively — without it, pos rate reaches 67% and κ drops to 0.21. Note: ChatGPT evaluated on 6,751 pairs (partial test set due to API cost).
+
+**RQ2 — Retrieval & Reranking** (nDCG@10, test set, 960 queries)
+
+| System | nDCG@10 | R@100 |
+|---|---|---|
+| BM25 (baseline) | 0.3053 | 0.7634 |
+| BGE-M3 dense retrieval | **0.5604** | 0.9047 |
+| Hybrid BM25 + BGE-M3 (RRF) | 0.5191 | 0.9154 |
+| BM25 + BGE reranker (Gemma2 qrels, N=100) | 0.5178 | — |
+| BM25 + BGE reranker (Qwen2.5-7B qrels, full) | 0.4478 | — |
+| Qwen-embed dense retrieval | 0.0066 | 0.0406 |
+
+BGE-M3 substantially outperforms BM25 on MIRACL-ID. Reranking BM25 candidates with a BGE reranker trained on Gemma2-generated qrels (N=100) approaches BGE-M3 performance (0.5178 vs 0.5604). The Qwen-trained reranker (full, 53,727 triplets) achieves nDCG@10=0.4478, a +46% improvement over BM25 baseline, but lower than Gemma2 N=100 — consistent with Gemma2's higher positive rate generating more informative training signal despite the larger dataset.
+
+From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage) consistently beat the BM25 baseline across all training sizes, with N=100 achieving the highest nDCG@10=0.5178. Counterintuitively, performance degrades as training size increases toward N=full (0.3993), while val average precision on LLM qrels rises monotonically to 99.9% — indicating the reranker overfits to LLM judge noise as more training data is added.
+
+| N (queries) | n_triplets | nDCG@10 | MAP@10 | Val AP (LLM) |
+|---|---|---|---|---|
+| 100 | 1,937 | **0.5178** | 0.4088 | 0.865 |
+| 300 | 5,285 | 0.4620 | 0.3491 | 0.873 |
+| 500 | 9,173 | 0.5011 | 0.3950 | 0.905 |
+| 1000 | 18,509 | 0.4072 | 0.2993 | 0.916 |
+| full | 60,750 | 0.3993 | 0.2917 | 1.000 |
+
+From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage) consistently beat the BM25 baseline across all training sizes, with N=100 achieving the highest nDCG@10=0.5178. Counterintuitively, performance degrades as training size increases toward N=full (0.3993), while val average precision on LLM qrels rises monotonically to 99.9% — indicating the reranker overfits to LLM judge noise as more training data is added.
+
+| N (queries) | n_triplets | nDCG@10 | MAP@10 | Val AP (LLM) |
+|---|---|---|---|---|
+| 100 | 1,937 | **0.5178** | 0.4088 | 0.865 |
+| 300 | 5,285 | 0.4620 | 0.3491 | 0.873 |
+| 500 | 9,173 | 0.5011 | 0.3950 | 0.905 |
+| 1000 | 18,509 | 0.4072 | 0.2993 | 0.916 |
+| full | 60,750 | 0.3993 | 0.2917 | 1.000 |
+
+**RQ3 — Bias Analysis**: pending (Karol)
+
+---
+
 ## Quick Start (per person)
 
 ### Step 0 — Clone & install

@@ -1,0 +1,2 @@
+judge,kappa,n_pairs,llm_pos_rate,human_pos_rate
+qwen_fewshot_bing_test,0.2719551199273097,9668,0.1639,0.3194

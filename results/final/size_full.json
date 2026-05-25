@@ -1,0 +1,9 @@
+{
+  "ndcg@10": 0.3993,
+  "map@10": 0.2917,
+  "recall@100": 0.7634,
+  "first_stage": "candidates/bm25_test_top100.jsonl",
+  "reranker": "reranker_full",
+  "top_k": 100,
+  "n_queries": 960
+}
