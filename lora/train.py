@@ -15,8 +15,8 @@ Args:
     --grad-accum      gradient accumulation steps (default: 4)
     --lr              learning rate (default: 2e-4)
     --lora-r          LoRA rank (default: 16)
-    --lora-alpha      LoRA alpha (default: 16)
-    --max-seq-length  max sequence length in tokens (default: 2048)
+    --lora-alpha      LoRA alpha (default: 32)
+    --max-seq-length  max sequence length in tokens (default: 1024)
     --max-steps       max training steps; 0=no limit. Use for smoke test (default: 0)
     --hf-repo         optional HuggingFace repo to push adapter to
     --no-upload       skip HuggingFace upload
@@ -57,8 +57,8 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=2e-4,
                         help="Learning rate (default: 2e-4)")
     parser.add_argument("--lora-r", type=int, default=16)
-    parser.add_argument("--lora-alpha", type=int, default=16)
-    parser.add_argument("--max-seq-length", type=int, default=2048)
+    parser.add_argument("--lora-alpha", type=int, default=32)
+    parser.add_argument("--max-seq-length", type=int, default=1024)
     parser.add_argument("--max-steps", type=int, default=0,
                         help="Max training steps (0=no limit)")
     parser.add_argument("--hf-repo", default=None,
@@ -193,7 +193,7 @@ def main():
             report_to="none",
             dataset_text_field="text",
             max_seq_length=args.max_seq_length,
-            packing=False,
+            packing=True,
         ),
     )
 
