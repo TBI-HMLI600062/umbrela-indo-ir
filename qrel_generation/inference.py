@@ -64,6 +64,8 @@ def parse_args():
                              "Auto-set to results/qrels/<judge>_<split>.txt when using --judge.")
     parser.add_argument("--data-dir", default="data/miracl-id/",
                         help="Path to processed MIRACL-ID directory.")
+    parser.add_argument("--lora-adapter", default=None,
+                        help="Path to LoRA adapter directory (for fine-tuned models).")
     parser.add_argument("--token", default=None,
                         help="HuggingFace token for private models.")
     return parser.parse_args()
@@ -213,7 +215,7 @@ def main():
     # Heavy imports — defer torch so --help and --list-judges work without GPU
     import os
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from model_utils import get_model_baseline, APIBasePipeline
+    from model_utils import get_model_baseline, get_model_lora, APIBasePipeline
     from relevance_scoring import grade_each_pq_pair
 
     is_api_model = provider in ("together", "openai", "deepseek")
@@ -224,7 +226,11 @@ def main():
         os.environ["HF_TOKEN"] = args.token
 
     print(f"Loading model: {model_id}  (provider={provider}, prompt={prompt_mode})")
-    model = get_model_baseline(model_id, provider=provider)
+    if args.lora_adapter:
+        print(f"  LoRA adapter: {args.lora_adapter}")
+        model = get_model_lora(model_id, args.lora_adapter)
+    else:
+        model = get_model_baseline(model_id, provider=provider)
 
     # Setup log/error paths
     logs_path = output_path.parent / "logs" / output_path.name.replace(".txt", ".jsonl")

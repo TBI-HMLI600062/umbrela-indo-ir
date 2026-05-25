@@ -187,6 +187,12 @@ huggingface-cli download fassabilf/umbrela-indo-ir \
 Data splits: **train** (~3257 queries), **val** (~814 queries), **test** (960 queries, has human qrels).
 Split seed: `42`. Test = MIRACL dev with human relevance judgments.
 
+Pre-computed BGE-M3 corpus embeddings (doc_emb.fp16.npy + doc_pids.npy, ~7 GB) are available at:
+```bash
+huggingface-cli download arpinasaranz/tk-tbi-bge-embedding \
+    --repo-type dataset --local-dir embeddings/bge-m3/
+```
+
 ### Step 2 — Run your LLM judge (replace MODEL_ID)
 ```bash
 # Faiz: Qwen
