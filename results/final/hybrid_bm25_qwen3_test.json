@@ -1,0 +1,9 @@
+{
+  "ndcg@10": 0.4603,
+  "map@10": 0.3502,
+  "recall@100": 0.8792,
+  "first_stage": "candidates/hybrid_bm25_qwen3_test_top100.jsonl",
+  "reranker": "none",
+  "top_k": 100,
+  "n_queries": 960
+}

@@ -21,12 +21,20 @@ Examples:
         --topics data/miracl-id/topics/test.tsv \
         --output candidates/bgem3_test_top100.jsonl
 
-    # Qwen3-Embedding from pre-built chunks:
+    # Qwen3-Embedding from pre-built chunks (no instruction — original):
     python retrieval/dense/retrieve.py \
         --faiss-chunks embeddings/qwen3-embed-4b/ \
         --model Qwen/Qwen3-Embedding-4B \
         --topics data/miracl-id/topics/test.tsv \
         --output candidates/qwen3_test_top100.jsonl
+
+    # Qwen3-Embedding with instruction prefix (recommended for Qwen3):
+    python retrieval/dense/retrieve.py \
+        --faiss-chunks embeddings/qwen3-embed-4b/ \
+        --model Qwen/Qwen3-Embedding-4B \
+        --topics data/miracl-id/topics/test.tsv \
+        --output candidates/qwen3_instruct_test_top100.jsonl \
+        --instruction "Instruct: Given a question, retrieve relevant passages that answer the question\nQuery: "
 """
 
 import argparse
@@ -57,6 +65,10 @@ def parse_args():
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch-size", type=int, default=None,
                         help="Query encoding batch size (default: 256 for BGE-M3, 32 for LLMs)")
+    parser.add_argument("--instruction", type=str, default=None,
+                        help="Instruction prefix prepended to each query before encoding. "
+                             "Recommended for Qwen3-Embedding: "
+                             "'Instruct: Given a question, retrieve relevant passages that answer the question\\nQuery: '")
     return parser.parse_args()
 
 
@@ -119,6 +131,14 @@ class QueryDataset(Dataset):
 
 def encode_queries(model_or_encoder, encoder_type: str, queries: list[str],
                    device: str, batch_size: int) -> np.ndarray:
+    if encoder_type == "vllm":
+        llm = model_or_encoder
+        outputs = llm.embed(queries)
+        embs = np.array([o.outputs.embedding for o in outputs], dtype=np.float32)
+        norms = np.linalg.norm(embs, axis=1, keepdims=True)
+        embs = np.where(norms > 0, embs / norms, embs)
+        return embs
+
     if encoder_type == "bgem3":
         out = model_or_encoder.encode(
             queries, batch_size=batch_size, max_length=128,
@@ -203,6 +223,21 @@ def main():
         encoder = BGEM3FlagModel(args.model, use_fp16=True, device=args.device)
         encoder_type = "bgem3"
         batch_size = args.batch_size or 256
+    elif "qwen3" in args.model.lower() and "embedding" in args.model.lower():
+        # Use vLLM (same as embed_corpus.py) so query embeddings are in the same space
+        # as the pre-built FAISS document embeddings.
+        from vllm import LLM
+        encoder = LLM(
+            model=args.model,
+            runner="pooling",
+            convert="embed",
+            gpu_memory_utilization=0.85,
+            max_model_len=8192,
+            dtype="bfloat16",
+            enforce_eager=False,
+        )
+        encoder_type = "vllm"
+        batch_size = args.batch_size or 960
     else:
         from transformers import AutoModel, AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
@@ -223,7 +258,12 @@ def main():
     print(f"\nLoading topics from {args.topics}...")
     topics = load_topics(Path(args.topics))
     queries = [q for _, q in topics]
-    print(f"Topics: {len(topics):,} queries")
+    if args.instruction:
+        instruction = args.instruction.replace("\\n", "\n")
+        queries = [instruction + q for q in queries]
+        print(f"Topics: {len(topics):,} queries | instruction prefix: {repr(instruction[:60])}...")
+    else:
+        print(f"Topics: {len(topics):,} queries")
 
     # --- Encode queries ---
     t0 = time.time()
