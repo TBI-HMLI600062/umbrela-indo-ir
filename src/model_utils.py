@@ -141,6 +141,40 @@ def get_model_baseline(name_or_path_to_model: str, use_together: bool = False,
             tokenizer=tokenizer
         )
 
+def get_model_lora(base_model_id: str, lora_adapter_path: str):
+    """
+    Load a base model with 4-bit quantization and merge/attach a LoRA adapter.
+
+    Returns a HuggingFace pipeline compatible with the existing UMBRELA
+    inference flow (grade_each_pq_pair / get_relevance_score_baseline).
+    """
+    from peft import PeftModel
+    from transformers import BitsAndBytesConfig
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_id,
+        quantization_config=bnb_config,
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+    )
+    model = PeftModel.from_pretrained(base_model, lora_adapter_path)
+    model = model.merge_and_unload()
+
+    return pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+    )
+
+
 # Note: The quantized model loading function below is commented out but preserved
 # for potential future use. It demonstrates how to load models with 4-bit quantization
 # for memory-efficient inference.

@@ -93,6 +93,83 @@ From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage
 
 ---
 
+## Result Files
+
+All result files live under `results/`. Key files and what they contain:
+
+### RQ1 — Judge Kappa (`results/final/`)
+
+| File | Judge | Split | κ | n_pairs |
+|---|---|---|---|---|
+| `kappa.csv` | ChatGPT + DeepSeek | test | 0.3856 / **0.4219** | 6,751 / 9,668 |
+| `kappa_qwen_test.csv` | Qwen2.5-7B | test | 0.3767 | 9,668 |
+| `kappa_qwen_train.csv` | Qwen2.5-7B | train | 0.3039 | 33,076 |
+| `kappa_qwen_val.csv` | Qwen2.5-7B | val | 0.2860 | 8,282 |
+| `kappa_gemma.csv` | SahabatAI-Gemma2 | test | 0.3763 | 9,668 |
+| `kappa_llama.csv` | SahabatAI-Llama3 (default) | test | 0.2103 | 9,668 |
+| `kappa_llama_strict.csv` | SahabatAI-Llama3 (strict) | test | 0.3652 | 9,668 |
+| `kappa_train.csv` | Llama3 strict | train | — | — |
+| `kappa_val.csv` | Llama3 strict | val | — | — |
+
+### E7 — Prompt Ablation (`results/final/`)
+
+| File | Coverage |
+|---|---|
+| `kappa_prompt_ablation.csv` | Qwen: zeroshot_basic/bing/bing_strict + fewshot_basic/bing (test) |
+| `kappa_prompt_ablation_full.csv` | Gemma2 (5 modes vLLM) + Llama3 (3 modes vLLM) (test) |
+| `kappa_qwen_zeroshot_basic_test.csv` | Qwen zeroshot_basic: κ=0.2393 |
+| `kappa_qwen_zeroshot_bing_strict_test.csv` | Qwen zeroshot_bing_strict: κ=0.3218 |
+| `kappa_qwen_fewshot_basic_test.csv` | Qwen fewshot_basic: κ=0.2254 |
+| `kappa_qwen_fewshot_bing_test.csv` | Qwen fewshot_bing: κ=0.2720 |
+| `kappa_gemma_vllm_*.csv` | Gemma2 per-mode (best: fewshot_bing κ=0.3843) |
+| `kappa_llama_vllm_*.csv` | Llama3 per-mode vLLM |
+
+> **Best prompt per model:** Qwen → `zeroshot_bing` (κ=0.3767), Gemma2 → `fewshot_bing` (κ=0.3843), Llama3 → strict constraint prompt (κ=0.3652)
+
+### RQ2 — Retrieval & Reranking (`results/`)
+
+| File | Isi |
+|---|---|
+| `retrieval_scores.csv` | BM25, Qwen-embed, BGE-M3, hybrid — nDCG@10/100, R@10/100, MRR (semua split) |
+| `final/bm25_qwen_rk.json` | BM25 + Qwen reranker: nDCG@10=0.4478, MAP@10=0.347, R@100=0.7634 |
+| `final/ablation_summary.csv` | Size ablation N={100,300,500,1000,full}: nDCG@10, MAP@10, val AP (Gemma2 qrels) |
+| `final/size_100.json` → `size_full.json` | Per-N eval detail (nDCG@10, MAP@10, R@100, val accuracy/F1) |
+| `final/learning_curve.png` | nDCG@10 vs N training queries plot |
+| `final/ap_vs_ndcg_curve.png` | Val AP (LLM) vs nDCG@10 (human) divergence plot |
+
+**Size ablation ringkasan** (`ablation_summary.csv`):
+
+| N queries | n_triplets | nDCG@10 | MAP@10 | Val AP (LLM) |
+|---|---|---|---|---|
+| 100 | 1,937 | **0.5178** | 0.4088 | 0.865 |
+| 300 | 5,285 | 0.4620 | 0.3491 | 0.873 |
+| 500 | 9,173 | 0.5011 | 0.3950 | 0.905 |
+| 1,000 | 18,509 | 0.4072 | 0.2993 | 0.916 |
+| full | 60,750 | 0.3993 | 0.2917 | 1.000 |
+
+### Qrel Files (`results/qrels/`, `results/qrels_strict/`)
+
+| File | Judge | Split | n_pairs |
+|---|---|---|---|
+| `qrels/sahabat-gemma_zeroshot_basic_test.txt` | Gemma2 (zeroshot_basic) | test | 9,668 |
+| `qrels/sahabat_llama_test.txt` | Llama3 (default prompt) | test | 9,668 |
+| `qrels/sahabat_llama_train.txt` | Llama3 (default prompt) | train | 33,076 |
+| `qrels/sahabat_llama_val.txt` | Llama3 (default prompt) | val | 8,282 |
+| `qrels_strict/sahabat_llama_strict_test.txt` | Llama3 (strict prompt) | test | 9,668 |
+| `qrels_strict/sahabat_llama_strict_train.txt` | Llama3 (strict prompt) | train | 33,076 |
+| `qrels_strict/sahabat_llama_strict_val.txt` | Llama3 (strict prompt) | val | 8,282 |
+
+> Qwen qrels (`qwen_*.txt`) tersimpan di HF dataset `fassabilf/umbrela-indo-ir` → `results/qrels/`, bukan di repo (terlalu besar).
+
+### Model Artifacts (`results/models/`)
+
+| Dir | Isi | HF |
+|---|---|---|
+| `reranker_qwen/` | BGE reranker trained on Qwen full qrels | `fassabilf/umbrela-indo-ir-reranker-qwen` |
+| `reranker_100/` → `reranker_full/` | Gemma2 size-ablation rerankers (5 variants) | — |
+
+---
+
 ## Quick Start (per person)
 
 ### Step 0 — Clone & install
@@ -109,6 +186,12 @@ huggingface-cli download fassabilf/umbrela-indo-ir \
 ```
 Data splits: **train** (~3257 queries), **val** (~814 queries), **test** (960 queries, has human qrels).
 Split seed: `42`. Test = MIRACL dev with human relevance judgments.
+
+Pre-computed BGE-M3 corpus embeddings (doc_emb.fp16.npy + doc_pids.npy, ~7 GB) are available at:
+```bash
+huggingface-cli download arpinasaranz/tk-tbi-bge-embedding \
+    --repo-type dataset --local-dir embeddings/bge-m3/
+```
 
 ### Step 2 — Run your LLM judge (replace MODEL_ID)
 ```bash

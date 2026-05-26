@@ -1,0 +1,4 @@
+judge,threshold,kappa_val,kappa_test,llm_pos_val,llm_pos_test,human_pos_val,human_pos_test,best_val
+qwen,1,0.2541,0.3255,0.4976,0.5214,0.305,0.3194,False
+qwen,2,0.286,0.3767,0.2911,0.3074,0.305,0.3194,True
+qwen,3,0.1459,0.1808,0.0716,0.076,0.305,0.3194,False
