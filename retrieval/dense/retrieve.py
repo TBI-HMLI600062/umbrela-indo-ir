@@ -69,6 +69,11 @@ def parse_args():
                         help="Instruction prefix prepended to each query before encoding. "
                              "Recommended for Qwen3-Embedding: "
                              "'Instruct: Given a question, retrieve relevant passages that answer the question\\nQuery: '")
+    parser.add_argument("--use-hf", action="store_true",
+                        help="Force HuggingFace transformers encoder for Qwen3-Embedding "
+                             "instead of vLLM. Use when vLLM is unavailable or has CUDA "
+                             "incompatibilities. Produces identical embeddings (same last-token "
+                             "pooling), so FAISS indices built with vLLM remain compatible.")
     return parser.parse_args()
 
 
@@ -223,9 +228,10 @@ def main():
         encoder = BGEM3FlagModel(args.model, use_fp16=True, device=args.device)
         encoder_type = "bgem3"
         batch_size = args.batch_size or 256
-    elif "qwen3" in args.model.lower() and "embedding" in args.model.lower():
+    elif "qwen3" in args.model.lower() and "embedding" in args.model.lower() and not args.use_hf:
         # Use vLLM (same as embed_corpus.py) so query embeddings are in the same space
         # as the pre-built FAISS document embeddings.
+        # Fall back to --use-hf flag if vLLM has CUDA incompatibilities.
         from vllm import LLM
         encoder = LLM(
             model=args.model,
