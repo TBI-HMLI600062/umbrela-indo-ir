@@ -77,6 +77,10 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=2,
                         help="Per-device batch size (default: 2)")
+    parser.add_argument("--eval-batch-size", type=int, default=8,
+                        help="Per-device eval batch size (default: 8). Eval is "
+                             "forward-only (no grads), so it fits a larger batch "
+                             "than training and runs far faster on the GPU.")
     parser.add_argument("--grad-accum", type=int, default=8,
                         help="Gradient accumulation steps (default: 8; effective batch=16)")
     parser.add_argument("--lr", type=float, default=2e-4)
@@ -87,6 +91,12 @@ def parse_args():
                         help="Max gradient steps; 0=no limit (use for smoke test)")
     parser.add_argument("--val-data", default=None,
                         help="Val data directory (val.jsonl inside); enables val loss tracking")
+    parser.add_argument("--eval-samples", type=int, default=0,
+                        help="Evaluate on a random N-sample subset of val (seeded); "
+                             "0=full val set (default). Eval cost is ~linear in val "
+                             "size (LM-head loss over a 152k vocab), so a subset is "
+                             "the main lever for faster eval — a few thousand samples "
+                             "give a reliable eval_loss for best-checkpoint selection.")
     parser.add_argument("--save-steps", type=int, default=500,
                         help="Save checkpoint every N steps; 0=epoch-only (default: 500)")
     parser.add_argument("--save-total-limit", type=int, default=3,
@@ -184,6 +194,10 @@ def main():
     eval_ds = None
     if args.val_data:
         val_examples = load_examples(Path(args.val_data), filename="val.jsonl")
+        if 0 < args.eval_samples < len(val_examples):
+            import random
+            val_examples = random.Random(42).sample(val_examples, args.eval_samples)
+            print(f"  val subsampled to {len(val_examples):,} examples (seeded)")
         print(f"  {len(val_examples):,} val examples")
         eval_ds = build_dataset(val_examples)
 
@@ -208,7 +222,7 @@ def main():
         num_train_epochs=args.epochs,
         max_steps=args.max_steps if args.max_steps > 0 else -1,
         per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.eval_batch_size,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
         lr_scheduler_type="linear",
