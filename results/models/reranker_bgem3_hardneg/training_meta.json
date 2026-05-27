@@ -1,0 +1,12 @@
+{
+  "base_model": "BAAI/bge-reranker-v2-m3",
+  "epochs": 3,
+  "batch_size": 16,
+  "lr": 2e-05,
+  "max_steps": 0,
+  "max_length": 256,
+  "bf16": true,
+  "n_triplets": 130961,
+  "n_train_examples": 261922,
+  "training_data": "results/reranker_data/bgem3_hardneg/"
+}

@@ -1,0 +1,9 @@
+{
+  "n_queries": 960,
+  "top_k": 100,
+  "mean_overlap_rate": 0.40471874999999996,
+  "mean_hardneg_both": 37.89270833333333,
+  "mean_hardneg_a_only": 59.228125,
+  "mean_hardneg_b_only": 59.442708333333336,
+  "pct_hardneg_excl_a": 0.6098395469498321
+}

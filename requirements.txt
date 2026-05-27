@@ -1,5 +1,5 @@
 torch>=2.0
-transformers>=4.40
+transformers>=4.51.0
 peft>=0.10
 trl>=0.9,<1.0
 accelerate>=0.27
@@ -14,6 +14,7 @@ pandas>=2.0
 jsonlines>=4.0
 tqdm>=4.66
 huggingface_hub>=0.20
+vllm>=0.8.5
 together
 openai>=1.0
 vllm>=0.6.0

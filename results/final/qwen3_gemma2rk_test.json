@@ -1,0 +1,9 @@
+{
+  "ndcg@10": 0.516,
+  "map@10": 0.4081,
+  "recall@100": 0.8508,
+  "first_stage": "qwen3_embed",
+  "reranker": "bge-reranker-gemma2-n100",
+  "top_k": 100,
+  "n_queries": 960
+}

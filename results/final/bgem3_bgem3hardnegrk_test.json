@@ -1,0 +1,9 @@
+{
+  "ndcg@10": 0.5659,
+  "map@10": 0.4572,
+  "recall@100": 0.9047,
+  "first_stage": "bge_m3",
+  "reranker": "reranker_bgem3_hardneg",
+  "top_k": 100,
+  "n_queries": 960
+}

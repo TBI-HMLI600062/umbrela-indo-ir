@@ -65,7 +65,8 @@ DeepSeek-V3 achieves the highest agreement (κ=0.42) and is also the most conser
 | Hybrid BM25 + BGE-M3 (RRF) | 0.5191 | 0.9154 |
 | BM25 + BGE reranker (Gemma2 qrels, N=100) | 0.5178 | — |
 | BM25 + BGE reranker (Qwen2.5-7B qrels, full) | 0.4478 | — |
-| Qwen-embed dense retrieval | 0.0066 | 0.0406 |
+| Qwen3-embed dense retrieval (no instruction) | 0.4958 | 0.8508 |
+| Hybrid BM25 + Qwen3-embed (RRF) | 0.4603 | 0.8792 |
 
 BGE-M3 substantially outperforms BM25 on MIRACL-ID. Reranking BM25 candidates with a BGE reranker trained on Gemma2-generated qrels (N=100) approaches BGE-M3 performance (0.5178 vs 0.5604). The Qwen-trained reranker (full, 53,727 triplets) achieves nDCG@10=0.4478, a +46% improvement over BM25 baseline, but lower than Gemma2 N=100 — consistent with Gemma2's higher positive rate generating more informative training signal despite the larger dataset.
 
@@ -89,7 +90,19 @@ From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage
 | 1000 | 18,509 | 0.4072 | 0.2993 | 0.916 |
 | full | 60,750 | 0.3993 | 0.2917 | 1.000 |
 
-**RQ3 — Bias Analysis**: pending (Karol)
+**RQ3 — Bias Analysis** (Karol ✅):
+
+| First-Stage | Reranker | nDCG@10 | Δ% vs baseline |
+|---|---|---|---|
+| BGE-M3 | Qwen-rk (LLM qrels) | 0.4495 | -19.8% |
+| BGE-M3 | Gemma2-rk (LLM qrels, N=100) | 0.5111 | -8.8% |
+| BGE-M3 | Qwen3-hardneg-rk | 0.5276 | -5.9% |
+| BGE-M3 | **BGE-hardneg-rk** | **0.5659** | **+1.0%** |
+| Qwen3-embed | Qwen-rk (LLM qrels) | 0.4585 | -7.5% |
+| Qwen3-embed | Gemma2-rk (LLM qrels, N=100) | 0.5160 | +4.1% |
+| Qwen3-embed | **BGE-hardneg-rk** | **0.5882** | **+18.6%** |
+
+Key finding: Hard negative mining > LLM-judged qrels. Family alignment (same-family reranker ↔ retriever) does *not* guarantee improvement — Qwen-rk hurts Qwen3-embed (-7.5%) while BGE-hardneg-rk (trained on BGE-M3 errors) is the best reranker for Qwen3-embed (+18.6%). No same-family judge bias detected: all 7 LLM judges agree BGE-M3 > Qwen3-embed > Hybrid > BM25.
 
 ---
 
@@ -136,6 +149,16 @@ All result files live under `results/`. Key files and what they contain:
 | `final/size_100.json` → `size_full.json` | Per-N eval detail (nDCG@10, MAP@10, R@100, val accuracy/F1) |
 | `final/learning_curve.png` | nDCG@10 vs N training queries plot |
 | `final/ap_vs_ndcg_curve.png` | Val AP (LLM) vs nDCG@10 (human) divergence plot |
+| `final/bgem3_qwenrk.json` | BGE-M3 + Qwen-rk: nDCG@10=0.4495 |
+| `final/qwen3_qwenrk.json` | Qwen3-embed + Qwen-rk: nDCG@10=0.4585 |
+| `final/bgem3_qwen3hardnegrk_test.json` | BGE-M3 + Qwen3-hardneg-rk: nDCG@10=0.5276 |
+| `final/hybrid_qwen3_hardnegrk_test.json` | Hybrid + Qwen3-hardneg-rk: nDCG@10=0.5306 |
+| `final/bgem3_gemma2rk_test.json` | BGE-M3 + Gemma2-rk: nDCG@10=0.5111 |
+| `final/qwen3_gemma2rk_test.json` | Qwen3-embed + Gemma2-rk: nDCG@10=0.5160 |
+| `final/bgem3_bgem3hardnegrk_test.json` | BGE-M3 + BGE-hardneg-rk: nDCG@10=0.5659 |
+| `final/qwen3_bgem3hardnegrk_test.json` | Qwen3-embed + BGE-hardneg-rk: nDCG@10=0.5882 |
+| `final/rq3_bias_analysis.md` | Analisis lengkap RQ3 — penjelasan semua temuan bias |
+| `final/bias_analysis/` | Output bias analysis: heatmap, violin, win/loss, judge matrix (PNG + JSON) |
 
 **Size ablation ringkasan** (`ablation_summary.csv`):
 
@@ -158,15 +181,31 @@ All result files live under `results/`. Key files and what they contain:
 | `qrels_strict/sahabat_llama_strict_test.txt` | Llama3 (strict prompt) | test | 9,668 |
 | `qrels_strict/sahabat_llama_strict_train.txt` | Llama3 (strict prompt) | train | 33,076 |
 | `qrels_strict/sahabat_llama_strict_val.txt` | Llama3 (strict prompt) | val | 8,282 |
+| `qrels/deepseek_test.txt` | DeepSeek-V3 | test | 9,668 |
+| `qrels/chatgpt_test.txt` | ChatGPT (GPT-4o) | test | 8,750 |
 
 > Qwen qrels (`qwen_*.txt`) tersimpan di HF dataset `fassabilf/umbrela-indo-ir` → `results/qrels/`, bukan di repo (terlalu besar).
+> Note: ChatGPT hanya memiliki judgements untuk 870/960 queries (90 queries tanpa judgement karena API limit).
 
 ### Model Artifacts (`results/models/`)
 
 | Dir | Isi | HF |
 |---|---|---|
 | `reranker_qwen/` | BGE reranker trained on Qwen full qrels | `fassabilf/umbrela-indo-ir-reranker-qwen` |
-| `reranker_100/` → `reranker_full/` | Gemma2 size-ablation rerankers (5 variants) | — |
+| `reranker_100/` → `reranker_full/` | Gemma2 size-ablation rerankers (5 variants) | `arya-raditya/bge-reranker-gemma2-n100` (best, N=100) |
+| `reranker_qwen3hardneg/` | BGE reranker trained on Qwen3-embed hard negatives (53,727 triplets) | `karolinajocelyn/umbrela-indo-ir-models` |
+| `reranker_bgem3_hardneg/` | BGE reranker trained on BGE-M3 hard negatives (130,961 triplets) | `karolinajocelyn/umbrela-indo-ir-models` |
+
+Download model artifacts (weights di HF, bukan di repo karena `.safetensors` di-ignore):
+```bash
+# Karolina's rerankers (Qwen3-hardneg + BGE-hardneg)
+huggingface-cli download karolinajocelyn/umbrela-indo-ir-models \
+    --repo-type model --local-dir results/models/
+
+# Radit's Gemma2 reranker (N=100, best size-ablation result)
+huggingface-cli download arya-raditya/bge-reranker-gemma2-n100 \
+    --repo-type model --local-dir results/models/reranker_gemma2_n100/
+```
 
 ---
 
