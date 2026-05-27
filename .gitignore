@@ -2,7 +2,7 @@
 data/miracl-id/
 embeddings/
 # candidates/ — tracked in repo (small JSONL, ~5-7 MB each)
-results/qrels/
+# results/qrels/ — tracked (deepseek, chatgpt, llama, gemma judge outputs)
 results/reranker/
 results/reranker_data/
 results/lora/
