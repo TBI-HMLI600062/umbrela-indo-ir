@@ -23,7 +23,7 @@ HF_TOKEN="${HF_TOKEN:-}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}"
 OUTPUT_DIR="${OUTPUT_DIR:-/workspace/umbrela-indo-ir/results/lora/qwen}"
 HF_REPO="${HF_REPO:-}"              # e.g. fassabilf/umbrela-lora-qwen
-EPOCHS="${EPOCHS:-30}"
+EPOCHS="${EPOCHS:-3}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 GRAD_ACCUM="${GRAD_ACCUM:-4}"
 
@@ -86,7 +86,7 @@ fi
 
 UPLOAD_FLAG=""
 if [ -n "$HF_REPO" ]; then
-    UPLOAD_FLAG="--hf-repo $HF_REPO"
+    UPLOAD_FLAG="--push-to-hub --hub-model-id $HF_REPO"
 fi
 
 python lora/train.py \
