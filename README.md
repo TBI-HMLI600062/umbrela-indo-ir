@@ -10,7 +10,7 @@ and analyze self-reinforcing bias (RQ3).
 
 ## Progress Report
 
-> Last updated: 2026-05-17
+> Last updated: 2026-05-28
 
 ### Base Paper
 
@@ -30,14 +30,14 @@ Implemented the full end-to-end pipeline: LLM judge inference, Cohen's kappa eva
 **Radit — SahabatAI-Gemma2 Judge + Size Ablation (RQ2)**
 Qrel generation completed for all splits: test (9,668 pairs), train (33,076 pairs), val (8,282 pairs). Cohen's kappa computed for all three splits. Size ablation (RQ2) fully completed: BGE reranker fine-tuned on 5 training subsets (N=100, 300, 500, 1000, full) using Gemma2-generated qrels, evaluated on test set with BM25 first-stage. Learning curve and divergence analysis (AP vs nDCG) generated.
 
-**Vincent — SahabatAI-Llama3 Judge**
-Inference on the test split (9,668 pairs) is completed using an unquantized model hosted on vast.ai. Full inference run on the train split is currently underway with 16,829 out of 33,076 pairs processed. Scripts are updated to ensure full precision model loading and bypass previous memory constraints.
+**Vincent — SahabatAI-Llama3 Judge + Reranker Training**
+Qrel generation completed for all splits using both default and strict prompt variants. BGE rerankers were fine-tuned on SahabatAI-Llama3 qrels and evaluated on BM25 top-100 candidates. The strict-prompt reranker reaches nDCG@10=0.5084, improving over the Qwen-trained reranker and showing that prompt calibration affects downstream reranker quality.
 
 **Arvin — First-Stage Retrieval**
 Implemented BM25 (bm25s, no Java dependency), BGE-M3 dense retrieval with FAISS, and hybrid RRF fusion. Generated top-100 candidate files for all splits (train/val/test). Retrieval scores evaluated and added to results table.
 
 **Karol — Corpus Encoding + Bias Analysis (RQ3)**
-Qwen2.5-7B corpus encoding completed in chunked batches (~20.8 GB total, 5 FAISS shards, uploaded to HuggingFace). RQ3 bias analysis implementation in progress.
+Qwen2.5-7B corpus encoding completed in chunked batches (~20.8 GB total, 5 FAISS shards, uploaded to HuggingFace). RQ3 bias analysis completed with retriever/reranker family matrix and hard-negative reranker comparisons.
 
 ---
 
@@ -64,11 +64,13 @@ DeepSeek-V3 achieves the highest agreement (κ=0.42) and is also the most conser
 | BGE-M3 dense retrieval | **0.5604** | 0.9047 |
 | Hybrid BM25 + BGE-M3 (RRF) | 0.5191 | 0.9154 |
 | BM25 + BGE reranker (Gemma2 qrels, N=100) | 0.5178 | — |
+| BM25 + BGE reranker (SahabatAI-Llama3 strict qrels, full) | 0.5084 | 0.7634 |
+| BM25 + BGE reranker (SahabatAI-Llama3 default qrels, full) | 0.4580 | 0.7634 |
 | BM25 + BGE reranker (Qwen2.5-7B qrels, full) | 0.4478 | — |
 | Qwen3-embed dense retrieval (no instruction) | 0.4958 | 0.8508 |
 | Hybrid BM25 + Qwen3-embed (RRF) | 0.4603 | 0.8792 |
 
-BGE-M3 substantially outperforms BM25 on MIRACL-ID. Reranking BM25 candidates with a BGE reranker trained on Gemma2-generated qrels (N=100) approaches BGE-M3 performance (0.5178 vs 0.5604). The Qwen-trained reranker (full, 53,727 triplets) achieves nDCG@10=0.4478, a +46% improvement over BM25 baseline, but lower than Gemma2 N=100 — consistent with Gemma2's higher positive rate generating more informative training signal despite the larger dataset.
+BGE-M3 substantially outperforms BM25 on MIRACL-ID. Reranking BM25 candidates with a BGE reranker trained on Gemma2-generated qrels (N=100) approaches BGE-M3 performance (0.5178 vs 0.5604). The SahabatAI-Llama3 strict-prompt reranker reaches nDCG@10=0.5084, while the default-prompt reranker reaches 0.4580. This gap mirrors the judge-calibration issue in RQ1: the default prompt overpredicts relevance, while the strict prompt produces a more useful training signal. The Qwen-trained reranker (full, 53,727 triplets) achieves nDCG@10=0.4478, a +46% improvement over BM25 baseline, but lower than Gemma2 N=100 and Llama3 strict.
 
 From a training size perspective, Gemma2-trained BGE rerankers (BM25 first-stage) consistently beat the BM25 baseline across all training sizes, with N=100 achieving the highest nDCG@10=0.5178. Counterintuitively, performance degrades as training size increases toward N=full (0.3993), while val average precision on LLM qrels rises monotonically to 99.9% — indicating the reranker overfits to LLM judge noise as more training data is added.
 
@@ -145,6 +147,8 @@ All result files live under `results/`. Key files and what they contain:
 |---|---|
 | `retrieval_scores.csv` | BM25, Qwen-embed, BGE-M3, hybrid — nDCG@10/100, R@10/100, MRR (semua split) |
 | `final/bm25_qwen_rk.json` | BM25 + Qwen reranker: nDCG@10=0.4478, MAP@10=0.347, R@100=0.7634 |
+| `final/bm25_sahabat_llama_rk.json` | BM25 + SahabatAI-Llama3 default reranker: nDCG@10=0.4580, MAP@10=0.3582, R@100=0.7634 |
+| `final/bm25_sahabat_llama_strict_rk.json` | BM25 + SahabatAI-Llama3 strict reranker: nDCG@10=0.5084, MAP@10=0.4044, R@100=0.7634 |
 | `final/ablation_summary.csv` | Size ablation N={100,300,500,1000,full}: nDCG@10, MAP@10, val AP (Gemma2 qrels) |
 | `final/size_100.json` → `size_full.json` | Per-N eval detail (nDCG@10, MAP@10, R@100, val accuracy/F1) |
 | `final/learning_curve.png` | nDCG@10 vs N training queries plot |
@@ -192,6 +196,8 @@ All result files live under `results/`. Key files and what they contain:
 | Dir | Isi | HF |
 |---|---|---|
 | `reranker_qwen/` | BGE reranker trained on Qwen full qrels | `fassabilf/umbrela-indo-ir-reranker-qwen` |
+| `reranker_sahabat_llama/` | BGE reranker trained on SahabatAI-Llama3 default qrels | local metadata |
+| `reranker_sahabat_llama_strict/` | BGE reranker trained on SahabatAI-Llama3 strict qrels | local metadata |
 | `reranker_100/` → `reranker_full/` | Gemma2 size-ablation rerankers (5 variants) | `arya-raditya/bge-reranker-gemma2-n100` (best, N=100) |
 | `reranker_qwen3hardneg/` | BGE reranker trained on Qwen3-embed hard negatives (53,727 triplets) | `karolinajocelyn/umbrela-indo-ir-models` |
 | `reranker_bgem3_hardneg/` | BGE reranker trained on BGE-M3 hard negatives (130,961 triplets) | `karolinajocelyn/umbrela-indo-ir-models` |
