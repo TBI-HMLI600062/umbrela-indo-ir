@@ -1,0 +1,16 @@
+{
+  "candidates": "candidates/qwen3_train_top100.jsonl",
+  "human_qrels": "data/miracl-id/qrels/human/train.txt",
+  "hard_neg_cutoff": 20,
+  "min_explicit": 0,
+  "max_triplets": 50,
+  "n_queries_input": 3257,
+  "n_queries_processed": 3257,
+  "n_triplets": 131239,
+  "n_skipped_no_topic": 0,
+  "n_skipped_no_pos": 0,
+  "n_skipped_no_hardneg": 0,
+  "n_skipped_min_explicit": 0,
+  "n_explicit_hardneg": 7965,
+  "n_unannotated_hardneg": 50532
+}
