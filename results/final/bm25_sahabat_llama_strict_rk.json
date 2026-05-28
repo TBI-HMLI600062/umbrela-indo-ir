@@ -1,0 +1,9 @@
+{
+  "ndcg@10": 0.5084,
+  "map@10": 0.4044,
+  "recall@100": 0.7634,
+  "first_stage": "bm25",
+  "reranker": "reranker_sahabat_llama_strict",
+  "top_k": 100,
+  "n_queries": 960
+}
